@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Lock, RefreshCw } from 'lucide-react';
+import { View, Text, StyleSheet, TextInput } from 'react-native';
+import { Lock, RefreshCw, UserCheck } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserProfile, StreamParticipant } from '../types';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
@@ -13,19 +13,39 @@ import { ControlsBar } from '../components/classroom/ControlsBar';
 import { Modal } from '../components/common/Modal';
 
 export interface MeetingRoomProps {
-  user: UserProfile;
+  user: UserProfile | null;
   roomCode: string;
   roomTitle?: string;
   onLeaveRoom: () => void;
 }
 
 export const MeetingRoom: React.FC<MeetingRoomProps> = ({
-  user,
+  user: initialUser,
   roomCode,
   roomTitle = 'Lớp Học Trực Tuyến Tương Tác',
   onLeaveRoom,
 }) => {
-  const isTeacher = user.role === 'teacher';
+  // Bug 2: Incognito Session Isolation in sessionStorage
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    if (typeof window !== 'undefined') {
+      const sessName = sessionStorage.getItem(`student_name_${roomCode}`);
+      const sessId = sessionStorage.getItem(`student_id_${roomCode}`);
+      if (sessName && sessId) {
+        return {
+          id: sessId,
+          fullName: sessName,
+          role: 'student',
+        };
+      }
+    }
+    return initialUser;
+  });
+
+  // Bug 2: Modal mandatory state when anonymous student accesses room link
+  const [joinModalVisible, setJoinModalVisible] = useState<boolean>(!currentUser);
+  const [inputStudentName, setInputStudentName] = useState<string>('');
+
+  const isTeacher = currentUser?.role === 'teacher';
   const { container16x9 } = useResponsiveLayout();
 
   // Media States
@@ -40,41 +60,58 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const [permissionModalVisible, setPermissionModalVisible] = useState<boolean>(false);
   const [copiedLinkSuccess, setCopiedLinkSuccess] = useState<boolean>(false);
 
-  // Participants list
-  const [participants, setParticipants] = useState<StreamParticipant[]>([
-    {
-      id: user.id,
-      name: user.fullName,
-      role: user.role,
-      isMicOn: true,
-      isCamOn: true,
-      isScreenSharing: false,
-      canDraw: true,
-    },
-    {
-      id: 'std-101',
-      name: 'Học Sinh An',
+  // Bug 1: 100% Dynamic active participants (starts empty, no hardcoded An/Bình)
+  const [participants, setParticipants] = useState<StreamParticipant[]>([]);
+
+  // Bug 2: Handle Incognito Student Join Name Submission
+  const handleAnonymousJoin = () => {
+    const cleanName = inputStudentName.trim() || 'Học Sinh Mới';
+    const newStudentId = `std-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(`student_name_${roomCode}`, cleanName);
+      sessionStorage.setItem(`student_id_${roomCode}`, newStudentId);
+    }
+
+    const newUser: UserProfile = {
+      id: newStudentId,
+      fullName: cleanName,
       role: 'student',
-      isMicOn: true,
-      isCamOn: true,
-      isScreenSharing: false,
-      canDraw: true,
-    },
-    {
-      id: 'std-102',
-      name: 'Học Sinh Bình',
-      role: 'student',
-      isMicOn: false,
-      isCamOn: true,
-      isScreenSharing: false,
-      canDraw: true,
-    },
-  ]);
+    };
+
+    setCurrentUser(newUser);
+    setJoinModalVisible(false);
+  };
+
+  // Sync local participant to dynamic participants list
+  useEffect(() => {
+    if (!currentUser) return;
+
+    setParticipants((prev) => {
+      const exists = prev.some((p) => p.id === currentUser.id);
+      if (!exists) {
+        return [
+          ...prev,
+          {
+            id: currentUser.id,
+            userName: currentUser.fullName,
+            role: currentUser.role,
+            isMicOn: true,
+            isCamOn: true,
+            isScreenSharing: false,
+            canDraw: true,
+          },
+        ];
+      }
+      return prev;
+    });
+  }, [currentUser]);
 
   // Realtime Canvas Hook
   const {
     strokes,
     addStroke,
+    removeStroke,
     clearCanvas,
     updateStudentPermission,
     setGlobalCanDraw,
@@ -82,19 +119,26 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     canCurrentUserDraw,
   } = useCanvasSync({
     roomId: roomCode,
-    userId: user.id,
-    userName: user.fullName,
-    isTeacher,
+    userId: currentUser?.id || 'anon',
+    userName: currentUser?.fullName || 'Học Sinh',
+    isTeacher: isTeacher || false,
   });
 
-  // Initialize PeerJS & Media Streams
+  // Initialize PeerJS & Media Streams when currentUser is defined
   useEffect(() => {
-    peerService.initialize(user.id, {
+    if (!currentUser) return;
+
+    peerService.initialize(currentUser.id, {
       onConnectionStatusChange: (status) => {
         setConnectionStatus(status);
         if (status === 'permission_denied') {
           setPermissionModalVisible(true);
         }
+      },
+      onLocalStream: (stream) => {
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === currentUser.id ? { ...p, stream } : p))
+        );
       },
       onRemoteStream: (peerId, stream) => {
         setParticipants((prev) =>
@@ -108,23 +152,25 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     return () => {
       peerService.disconnect();
     };
-  }, [user.id]);
+  }, [currentUser]);
 
   const handleToggleMic = () => {
+    if (!currentUser) return;
     const nextState = !isMicOn;
     setIsMicOn(nextState);
     peerService.toggleAudio(nextState);
     setParticipants((prev) =>
-      prev.map((p) => (p.id === user.id ? { ...p, isMicOn: nextState } : p))
+      prev.map((p) => (p.id === currentUser.id ? { ...p, isMicOn: nextState } : p))
     );
   };
 
   const handleToggleCam = () => {
+    if (!currentUser) return;
     const nextState = !isCamOn;
     setIsCamOn(nextState);
     peerService.toggleVideo(nextState);
     setParticipants((prev) =>
-      prev.map((p) => (p.id === user.id ? { ...p, isCamOn: nextState } : p))
+      prev.map((p) => (p.id === currentUser.id ? { ...p, isCamOn: nextState } : p))
     );
   };
 
@@ -145,7 +191,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   };
 
   const handleCopyRoomLink = () => {
-    const link = `${window.location.origin}/join/${roomCode}?name=${encodeURIComponent(user.fullName)}`;
+    const link = `${window.location.origin}/join/${roomCode}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(link);
       setCopiedLinkSuccess(true);
@@ -156,8 +202,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   return (
     <View style={styles.roomContainer}>
       <Header
-        userName={user.fullName}
-        role={user.role}
+        userName={currentUser?.fullName || 'Học Sinh'}
+        role={currentUser?.role || 'student'}
         roomTitle={`${roomTitle} (${roomCode})`}
         onLogout={() => setExitModalVisible(true)}
       />
@@ -183,10 +229,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         screenStream={screenStream}
         strokes={strokes}
         onAddStroke={addStroke}
+        onRemoveStroke={removeStroke}
         onClearAll={clearCanvas}
-        userId={user.id}
-        userName={user.fullName}
-        isTeacher={isTeacher}
+        userId={currentUser?.id || 'anon'}
+        userName={currentUser?.fullName || 'Học Sinh'}
+        isTeacher={isTeacher || false}
         canDraw={canCurrentUserDraw}
         onToggleStudentDraw={(stdId, curr) => updateStudentPermission(stdId, !curr)}
       />
@@ -199,13 +246,34 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         onToggleCam={handleToggleCam}
         isScreenSharing={isScreenSharing}
         onToggleScreenShare={handleToggleScreenShare}
-        isTeacher={isTeacher}
+        isTeacher={isTeacher || false}
         globalCanDraw={permissionState.globalCanDraw}
         onToggleGlobalDraw={() => setGlobalCanDraw(!permissionState.globalCanDraw)}
         onCopyRoomLink={handleCopyRoomLink}
         onLeaveClass={() => setExitModalVisible(true)}
         copiedSuccess={copiedLinkSuccess}
       />
+
+      {/* Bug 2: Mandatory JoinRoomNameModal for Anonymous Incognito visitors */}
+      <Modal
+        visible={joinModalVisible}
+        onClose={() => {}}
+        title="Em Hãy Nhập Tên Của Mình Để Vào Lớp Ché"
+        icon={UserCheck}
+        confirmLabel="Vào Lớp Ngay"
+        confirmVariant="success"
+        onConfirm={handleAnonymousJoin}
+      >
+        <TextInput
+          style={styles.nameInput}
+          placeholder="Nhập họ tên của em (VD: Lê Văn Nam)..."
+          placeholderTextColor={COLORS.gray400}
+          value={inputStudentName}
+          onChangeText={setInputStudentName}
+          autoFocus
+          onSubmitEditing={handleAnonymousJoin}
+        />
+      </Modal>
 
       {/* Exit Class Confirmation Modal */}
       <Modal
@@ -252,5 +320,16 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '800',
     fontSize: 14,
+  },
+  nameInput: {
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginVertical: 12,
   },
 });

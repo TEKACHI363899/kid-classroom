@@ -6,9 +6,9 @@ export interface UserProfile {
   id: string;
   fullName: string;
   role: UserRole;
+  email?: string;
   avatarUrl?: string;
   createdAt?: string;
-  email?: string;
 }
 
 export interface TeacherAccount {
@@ -21,8 +21,28 @@ export interface TeacherAccount {
 
 export interface AuthResponse {
   success: boolean;
-  message?: string;
+  message: string;
   user?: UserProfile;
+}
+
+export interface Participant {
+  id: string;
+  userName: string;
+  role: UserRole;
+  isCamOn: boolean;
+  isMicOn: boolean;
+  canDraw: boolean;
+  stream?: MediaStream;
+}
+
+export interface FloatingTextInputState {
+  visible: boolean;
+  x: number; // Absolute px on canvas
+  y: number; // Absolute px on canvas
+  normX: number; // 0.0 - 1.0
+  normY: number; // 0.0 - 1.0
+  text: string;
+  color: string;
 }
 
 export interface TeacherStudent {
@@ -75,19 +95,4 @@ export interface DrawingPermissionState {
   studentPermissions: Record<string, boolean>;
 }
 
-export interface WebRTCMessage {
-  type: 'canvas_stroke' | 'canvas_clear' | 'permission_change' | 'chat_message' | 'user_joined';
-  senderId: string;
-  payload: unknown;
-}
-
-export interface StreamParticipant {
-  id: string;
-  name: string;
-  role: UserRole;
-  isMicOn: boolean;
-  isCamOn: boolean;
-  isScreenSharing: boolean;
-  canDraw: boolean;
-  stream?: MediaStream;
-}
+export interface StreamParticipant extends Participant {}

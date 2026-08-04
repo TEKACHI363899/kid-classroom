@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Mic, MicOff, VideoOff, Pencil, ShieldCheck, User } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../../constants';
@@ -12,6 +12,7 @@ export interface VideoGridProps {
   screenStream?: MediaStream | null;
   strokes: CanvasStroke[];
   onAddStroke: (stroke: CanvasStroke) => void;
+  onRemoveStroke: (strokeId: string) => void;
   onClearAll: () => void;
   userId: string;
   userName: string;
@@ -27,6 +28,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   screenStream,
   strokes,
   onAddStroke,
+  onRemoveStroke,
   onClearAll,
   userId,
   userName,
@@ -36,7 +38,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
 }) => {
   return (
     <View style={styles.outerLayout}>
-      {/* 16:9 Central Interactive Container */}
+      {/* 16:9 Central Interactive Container (Bug 4: Screen Share Viewport) */}
       <View
         style={[
           styles.viewportContainer16x9,
@@ -50,7 +52,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               ref={(ref) => {
                 if (ref && screenStream && ref.srcObject !== screenStream) {
                   ref.srcObject = screenStream;
-                  ref.play().catch((e) => console.warn('Screen video play err', e));
+                  ref.play().catch((e) => console.warn('Screen video play error', e));
                 }
               }}
               style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
@@ -73,6 +75,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           containerHeight={containerHeight}
           strokes={strokes}
           onAddStroke={onAddStroke}
+          onRemoveStroke={onRemoveStroke}
           onClearAll={onClearAll}
           userId={userId}
           userName={userName}
@@ -81,68 +84,109 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         />
       </View>
 
-      {/* Participant Video Grid Sidebar / Bottom Bar */}
+      {/* Bug 3: Participant Video Grid Sidebar / Bottom Bar with Live Video Feeds */}
       <View style={styles.participantsRail}>
         {participants.map((p) => (
-          <View key={p.id} style={styles.participantCard}>
-            <View style={styles.participantAvatarArea}>
-              <View
-                style={[
-                  styles.avatarCircle,
-                  { backgroundColor: p.role === 'teacher' ? COLORS.purple : COLORS.primary },
-                ]}
-              >
-                {p.role === 'teacher' ? (
-                  <ShieldCheck size={ICON_SIZES.md} color={COLORS.white} />
-                ) : (
-                  <User size={ICON_SIZES.md} color={COLORS.white} />
-                )}
-              </View>
-
-              {/* Status Indicators */}
-              <View style={styles.statusBadges}>
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: p.isMicOn ? COLORS.success : COLORS.danger },
-                  ]}
-                >
-                  {p.isMicOn ? (
-                    <Mic size={12} color={COLORS.white} />
-                  ) : (
-                    <MicOff size={12} color={COLORS.white} />
-                  )}
-                </View>
-                {!p.isCamOn && (
-                  <View style={[styles.statusDot, { backgroundColor: COLORS.danger }]}>
-                    <VideoOff size={12} color={COLORS.white} />
-                  </View>
-                )}
-              </View>
-            </View>
-
-            <Text style={styles.participantName} numberOfLines={1}>
-              {p.name} {p.id === userId ? '(Bạn)' : ''}
-            </Text>
-
-            {/* Individual Grant Drawing Toggle (Teacher only) */}
-            {isTeacher && p.role === 'student' && onToggleStudentDraw && (
-              <TouchableOpacity
-                onPress={() => onToggleStudentDraw(p.id, p.canDraw)}
-                style={[
-                  styles.drawToggleBtn,
-                  p.canDraw ? styles.drawToggleActive : styles.drawToggleInactive,
-                ]}
-              >
-                <Pencil size={12} color={p.canDraw ? COLORS.white : COLORS.gray600} />
-                <Text style={[styles.drawToggleText, p.canDraw && { color: COLORS.white }]}>
-                  {p.canDraw ? 'Vẽ: ON' : 'Vẽ: OFF'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          <ParticipantCard
+            key={p.id}
+            participant={p}
+            isSelf={p.id === userId}
+            isTeacherOwner={isTeacher}
+            onToggleStudentDraw={onToggleStudentDraw}
+          />
         ))}
       </View>
+    </View>
+  );
+};
+
+const ParticipantCard: React.FC<{
+  participant: StreamParticipant;
+  isSelf: boolean;
+  isTeacherOwner: boolean;
+  onToggleStudentDraw?: (studentId: string, currentCanDraw: boolean) => void;
+}> = ({ participant: p, isSelf, isTeacherOwner, onToggleStudentDraw }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (videoRef.current && p.stream && p.isCamOn) {
+      if (videoRef.current.srcObject !== p.stream) {
+        videoRef.current.srcObject = p.stream;
+        videoRef.current.play().catch((e) => console.warn('Video play warning', e));
+      }
+    }
+  }, [p.stream, p.isCamOn]);
+
+  return (
+    <View style={styles.participantCard}>
+      <View style={styles.participantAvatarArea}>
+        {/* Bug 3: Render Live Camera Stream if Cam is ON */}
+        {p.isCamOn && p.stream ? (
+          <div style={{ width: 64, height: 64, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' }}>
+            <video
+              ref={videoRef}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              autoPlay
+              playsInline
+              muted={isSelf}
+            />
+          </div>
+        ) : (
+          <View
+            style={[
+              styles.avatarCircle,
+              { backgroundColor: p.role === 'teacher' ? COLORS.purple : COLORS.primary },
+            ]}
+          >
+            {p.role === 'teacher' ? (
+              <ShieldCheck size={ICON_SIZES.md} color={COLORS.white} />
+            ) : (
+              <User size={ICON_SIZES.md} color={COLORS.white} />
+            )}
+          </View>
+        )}
+
+        {/* Bug 3: Status Indicators */}
+        <View style={styles.statusBadges}>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: p.isMicOn ? COLORS.success : COLORS.danger },
+            ]}
+          >
+            {p.isMicOn ? (
+              <Mic size={12} color={COLORS.white} />
+            ) : (
+              <MicOff size={12} color={COLORS.white} />
+            )}
+          </View>
+          {!p.isCamOn && (
+            <View style={[styles.statusDot, { backgroundColor: COLORS.danger }]}>
+              <VideoOff size={12} color={COLORS.white} />
+            </View>
+          )}
+        </View>
+      </View>
+
+      <Text style={styles.participantName} numberOfLines={1}>
+        {p.userName} {isSelf ? '(Bạn)' : ''}
+      </Text>
+
+      {/* Individual Grant Drawing Toggle (Teacher only) */}
+      {isTeacherOwner && p.role === 'student' && onToggleStudentDraw && (
+        <TouchableOpacity
+          onPress={() => onToggleStudentDraw(p.id, p.canDraw)}
+          style={[
+            styles.drawToggleBtn,
+            p.canDraw ? styles.drawToggleActive : styles.drawToggleInactive,
+          ]}
+        >
+          <Pencil size={12} color={p.canDraw ? COLORS.white : COLORS.gray600} />
+          <Text style={[styles.drawToggleText, p.canDraw && { color: COLORS.white }]}>
+            {p.canDraw ? 'Vẽ: ON' : 'Vẽ: OFF'}
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -211,9 +255,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   avatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },

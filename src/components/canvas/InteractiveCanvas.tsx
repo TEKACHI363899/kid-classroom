@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TextInput, Modal, TouchableOpacity, Text } from 'react-native';
-import type { CanvasStroke, StrokePoint, ToolType } from '../../types';
+import { View, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { Check, X } from 'lucide-react';
+import type { CanvasStroke, StrokePoint, ToolType, FloatingTextInputState } from '../../types';
 import { normalizeCoordinate, denormalizeCoordinate, pointsToSvgPath } from '../../utils/coordinateNormalizer';
-import { COLORS } from '../../constants';
+import { COLORS, CANVAS_COLORS } from '../../constants';
 import { CanvasToolbar } from './CanvasToolbar';
 
 export interface InteractiveCanvasProps {
@@ -10,6 +11,7 @@ export interface InteractiveCanvasProps {
   containerHeight: number;
   strokes: CanvasStroke[];
   onAddStroke: (stroke: CanvasStroke) => void;
+  onRemoveStroke: (strokeId: string) => void;
   onClearAll: () => void;
   userId: string;
   userName: string;
@@ -22,6 +24,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   containerHeight,
   strokes,
   onAddStroke,
+  onRemoveStroke,
   onClearAll,
   userId,
   userName,
@@ -35,10 +38,34 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [currentPoints, setCurrentPoints] = useState<StrokePoint[]>([]);
 
-  // Text Tool State
-  const [textInputVisible, setTextInputVisible] = useState<boolean>(false);
-  const [textPoint, setTextPoint] = useState<StrokePoint>({ x: 0.5, y: 0.5 });
-  const [textVal, setTextVal] = useState<string>('');
+  // Bug 6: Floating Inline Text Input Card State
+  const [floatingText, setFloatingText] = useState<FloatingTextInputState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    normX: 0.5,
+    normY: 0.5,
+    text: '',
+    color: '#F43F5E',
+  });
+
+  // Bug 5: Eraser Hit-Testing (<15px distance to stroke points)
+  const eraseStrokesNearPoint = (absoluteX: number, absoluteY: number) => {
+    const hitRadius = 15;
+    strokes.forEach((stroke) => {
+      let isHit = false;
+      stroke.points.forEach((pt) => {
+        const absPt = denormalizeCoordinate(pt.x, pt.y, containerWidth, containerHeight);
+        const dist = Math.hypot(absPt.x - absoluteX, absPt.y - absoluteY);
+        if (dist < hitRadius) {
+          isHit = true;
+        }
+      });
+      if (isHit) {
+        onRemoveStroke(stroke.id);
+      }
+    });
+  };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!canDraw) return;
@@ -51,25 +78,38 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     if (currentTool === 'pencil') {
       setIsDrawing(true);
       setCurrentPoints([norm]);
+    } else if (currentTool === 'eraser') {
+      setIsDrawing(true);
+      eraseStrokesNearPoint(absoluteX, absoluteY);
     } else if (currentTool === 'text') {
-      setTextPoint(norm);
-      setTextVal('');
-      setTextInputVisible(true);
+      setFloatingText({
+        visible: true,
+        x: Math.min(absoluteX, containerWidth - 220),
+        y: Math.min(absoluteY, containerHeight - 120),
+        normX: norm.x,
+        normY: norm.y,
+        text: '',
+        color: currentColor,
+      });
     }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDrawing || !canDraw || currentTool !== 'pencil') return;
+    if (!isDrawing || !canDraw) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const absoluteX = e.clientX - rect.left;
     const absoluteY = e.clientY - rect.top;
 
-    const norm = normalizeCoordinate(absoluteX, absoluteY, containerWidth, containerHeight);
-    setCurrentPoints((prev) => [...prev, norm]);
+    if (currentTool === 'pencil') {
+      const norm = normalizeCoordinate(absoluteX, absoluteY, containerWidth, containerHeight);
+      setCurrentPoints((prev) => [...prev, norm]);
+    } else if (currentTool === 'eraser') {
+      eraseStrokesNearPoint(absoluteX, absoluteY);
+    }
   };
 
   const handlePointerUp = () => {
-    if (isDrawing && currentPoints.length > 0) {
+    if (isDrawing && currentTool === 'pencil' && currentPoints.length > 0) {
       setIsDrawing(false);
       const newStroke: CanvasStroke = {
         id: `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -82,26 +122,27 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       };
       onAddStroke(newStroke);
       setCurrentPoints([]);
+    } else {
+      setIsDrawing(false);
     }
   };
 
-  const handleTextSubmit = () => {
-    if (textVal.trim()) {
+  const handleConfirmText = () => {
+    if (floatingText.text.trim()) {
       const textStroke: CanvasStroke = {
         id: `text-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         userId,
         userName,
         toolType: 'text',
-        points: [textPoint],
-        color: currentColor,
+        points: [{ x: floatingText.normX, y: floatingText.normY }],
+        color: floatingText.color,
         strokeWidth: currentWidth,
-        textContent: textVal.trim(),
+        textContent: floatingText.text.trim(),
         fontSize: currentWidth * 3 + 14,
       };
       onAddStroke(textStroke);
     }
-    setTextInputVisible(false);
-    setTextVal('');
+    setFloatingText((prev) => ({ ...prev, visible: false, text: '' }));
   };
 
   const currentSvgPath = pointsToSvgPath(currentPoints, containerWidth, containerHeight);
@@ -112,7 +153,10 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         currentTool={currentTool}
         onSelectTool={setCurrentTool}
         currentColor={currentColor}
-        onSelectColor={setCurrentColor}
+        onSelectColor={(c) => {
+          setCurrentColor(c);
+          setFloatingText((prev) => ({ ...prev, color: c }));
+        }}
         currentWidth={currentWidth}
         onSelectWidth={setCurrentWidth}
         onClearAll={onClearAll}
@@ -128,7 +172,15 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           position: 'absolute',
           top: 0,
           left: 0,
-          cursor: canDraw ? (currentTool === 'pencil' ? 'crosshair' : currentTool === 'text' ? 'text' : 'pointer') : 'not-allowed',
+          cursor: canDraw
+            ? currentTool === 'pencil'
+              ? 'crosshair'
+              : currentTool === 'eraser'
+              ? 'cell'
+              : currentTool === 'text'
+              ? 'text'
+              : 'pointer'
+            : 'not-allowed',
           touchAction: 'none',
           zIndex: 20,
         }}
@@ -182,7 +234,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           })}
 
           {/* Render Active Drawing Path */}
-          {isDrawing && currentSvgPath && (
+          {isDrawing && currentTool === 'pencil' && currentSvgPath && (
             <path
               d={currentSvgPath}
               stroke={currentColor}
@@ -192,37 +244,89 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
               strokeLinejoin="round"
             />
           )}
+
+          {/* Bug 6: Neon Dashed Indicator + Live Text Preview */}
+          {floatingText.visible && (
+            <>
+              <circle
+                cx={floatingText.x}
+                cy={floatingText.y}
+                r={8}
+                fill="none"
+                stroke="#3B82F6"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+              />
+              {floatingText.text !== '' && (
+                <text
+                  x={floatingText.x}
+                  y={floatingText.y}
+                  fill={floatingText.color}
+                  fontSize={currentWidth * 3 + 14}
+                  fontWeight="bold"
+                  fontFamily="Nunito, sans-serif"
+                  opacity={0.8}
+                >
+                  {floatingText.text}
+                </text>
+              )}
+            </>
+          )}
         </svg>
       </div>
 
-      {/* Text Input Modal */}
-      <Modal visible={textInputVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Nhập Văn Bản Nhanh</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Gõ chữ tại đây..."
-              placeholderTextColor={COLORS.gray400}
-              value={textVal}
-              onChangeText={setTextVal}
-              autoFocus
-              onSubmitEditing={handleTextSubmit}
-            />
-            <View style={styles.modalActions}>
+      {/* Bug 6: Floating Inline Text Input Card */}
+      {floatingText.visible && (
+        <View
+          style={[
+            styles.floatingCard,
+            {
+              top: floatingText.y + 12,
+              left: floatingText.x + 12,
+            },
+          ]}
+        >
+          <TextInput
+            style={styles.floatingInput}
+            placeholder="Gõ nội dung tại đây..."
+            placeholderTextColor={COLORS.gray400}
+            value={floatingText.text}
+            onChangeText={(text) => setFloatingText((prev) => ({ ...prev, text }))}
+            autoFocus
+            onSubmitEditing={handleConfirmText}
+          />
+
+          {/* Quick Color Selector */}
+          <View style={styles.floatingColorRow}>
+            {CANVAS_COLORS.slice(0, 4).map((c) => (
               <TouchableOpacity
-                onPress={() => setTextInputVisible(false)}
-                style={[styles.btn, styles.btnCancel]}
+                key={c}
+                onPress={() => setFloatingText((prev) => ({ ...prev, color: c }))}
+                style={[
+                  styles.miniColorDot,
+                  { backgroundColor: c },
+                  floatingText.color === c && styles.miniColorDotActive,
+                ]}
+              />
+            ))}
+
+            <View style={styles.floatingActionRow}>
+              <TouchableOpacity
+                onPress={() => setFloatingText((prev) => ({ ...prev, visible: false }))}
+                style={[styles.floatingActionBtn, styles.btnCancel]}
               >
-                <Text style={styles.btnCancelText}>Hủy</Text>
+                <X size={16} color={COLORS.gray600} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleTextSubmit} style={[styles.btn, styles.btnSubmit]}>
-                <Text style={styles.btnSubmitText}>Thêm Vô Bảng</Text>
+              <TouchableOpacity
+                onPress={handleConfirmText}
+                style={[styles.floatingActionBtn, styles.btnConfirm]}
+              >
+                <Check size={16} color={COLORS.white} />
               </TouchableOpacity>
             </View>
           </View>
         </View>
-      </Modal>
+      )}
     </View>
   );
 };
@@ -235,61 +339,59 @@ const styles = StyleSheet.create({
     zIndex: 15,
     overflow: 'hidden',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 400,
+  floatingCard: {
+    position: 'absolute',
+    zIndex: 35,
     backgroundColor: COLORS.white,
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
+    padding: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.textDark,
-    marginBottom: 12,
-  },
-  textInput: {
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 8,
     borderWidth: 2,
     borderColor: COLORS.primary,
-    borderRadius: 14,
-    padding: 12,
-    fontSize: 16,
+    width: 240,
+  },
+  floatingInput: {
+    backgroundColor: COLORS.gray100,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    fontWeight: '700',
     color: COLORS.textDark,
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  modalActions: {
+  floatingColorRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  btn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
+  miniColorDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+  },
+  miniColorDotActive: {
+    borderWidth: 2,
+    borderColor: COLORS.textDark,
+  },
+  floatingActionRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  floatingActionBtn: {
+    padding: 6,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   btnCancel: {
     backgroundColor: COLORS.gray100,
   },
-  btnCancelText: {
-    color: COLORS.gray600,
-    fontWeight: '700',
-  },
-  btnSubmit: {
+  btnConfirm: {
     backgroundColor: COLORS.primary,
-  },
-  btnSubmitText: {
-    color: COLORS.white,
-    fontWeight: '800',
   },
 });

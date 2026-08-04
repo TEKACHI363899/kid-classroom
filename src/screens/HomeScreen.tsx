@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { User, ShieldCheck, ArrowRight, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { User, ShieldCheck, ArrowRight, BookOpen, KeyRound } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserRole, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
-import { loginTeacher, registerTeacher } from '../services/storageService';
 
 export interface HomeScreenProps {
   onLogin: (user: UserProfile, roomCode?: string) => void;
@@ -12,21 +11,9 @@ export interface HomeScreenProps {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
-
-  // Student state
   const [studentName, setStudentName] = useState<string>('');
-  const [roomCode, setRoomCode] = useState<string>('');
-
-  // Teacher Auth State
-  const [isRegistering, setIsRegistering] = useState<boolean>(false);
-  const [teacherName, setTeacherName] = useState<string>('');
-  const [teacherEmail, setTeacherEmail] = useState<string>('');
-  const [teacherPassword, setTeacherPassword] = useState<string>('');
-  const [teacherConfirmPassword, setTeacherConfirmPassword] = useState<string>('');
-
-  // Notification state
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [successMessage, setSuccessMessage] = useState<string>('');
+  const [roomCode, setRoomCode] = useState<string>('MATH101');
+  const [teacherEmail, setTeacherEmail] = useState<string>('teacher@kidclass.edu.vn');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -43,77 +30,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   }, []);
 
   const handleStudentJoin = () => {
-    setErrorMessage('');
-    const finalName = studentName.trim();
-    if (!finalName) {
-      setErrorMessage('Vui lòng nhập tên học sinh của bạn.');
-      return;
-    }
+    const finalName = studentName.trim() || 'Học Sinh Thân Yêu';
     const user: UserProfile = {
       id: `std-${Date.now()}`,
       fullName: finalName,
       role: 'student',
     };
-    onLogin(user, roomCode.trim());
+    onLogin(user, roomCode);
   };
 
-  const handleTeacherAuth = () => {
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    if (isRegistering) {
-      if (!teacherName.trim()) {
-        setErrorMessage('Vui lòng nhập họ và tên của giáo viên.');
-        return;
-      }
-      if (!teacherEmail.trim()) {
-        setErrorMessage('Vui lòng nhập địa chỉ email.');
-        return;
-      }
-      if (!teacherPassword.trim()) {
-        setErrorMessage('Vui lòng nhập mật khẩu.');
-        return;
-      }
-      if (teacherPassword !== teacherConfirmPassword) {
-        setErrorMessage('Mật khẩu xác nhận không khớp.');
-        return;
-      }
-
-      const res = registerTeacher(teacherName, teacherEmail, teacherPassword);
-      if (!res.success) {
-        setErrorMessage(res.message || 'Đăng ký thất bại.');
-        return;
-      }
-
-      setSuccessMessage(res.message || 'Tạo tài khoản thành công!');
-      if (res.user) {
-        setTimeout(() => {
-          onLogin(res.user!);
-        }, 1000);
-      }
-    } else {
-      if (!teacherEmail.trim()) {
-        setErrorMessage('Vui lòng nhập địa chỉ email.');
-        return;
-      }
-      if (!teacherPassword.trim()) {
-        setErrorMessage('Vui lòng nhập mật khẩu.');
-        return;
-      }
-
-      const res = loginTeacher(teacherEmail, teacherPassword);
-      if (!res.success) {
-        setErrorMessage(res.message || 'Đăng nhập thất bại.');
-        return;
-      }
-
-      setSuccessMessage(res.message || 'Đăng nhập thành công!');
-      if (res.user) {
-        setTimeout(() => {
-          onLogin(res.user!);
-        }, 600);
-      }
-    }
+  const handleTeacherJoin = () => {
+    const user: UserProfile = {
+      id: `tch-101`,
+      fullName: 'Cô Nông Thị Tuyết',
+      role: 'teacher',
+    };
+    onLogin(user, roomCode);
   };
 
   return (
@@ -131,25 +63,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
         {/* Role Toggle Selector */}
         <View style={styles.roleToggleRow}>
           <TouchableOpacity
-            onPress={() => {
-              setSelectedRole('student');
-              setErrorMessage('');
-              setSuccessMessage('');
-            }}
+            onPress={() => setSelectedRole('student')}
             style={[styles.roleTab, selectedRole === 'student' && styles.roleTabActiveStudent]}
           >
             <User size={ICON_SIZES.md} color={selectedRole === 'student' ? COLORS.white : COLORS.primary} />
             <Text style={[styles.roleTabText, selectedRole === 'student' && styles.roleTabTextActive]}>
-              Học Sinh (Vào Lớp)
+              Học Sinh (Vào Lớp Ngay)
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => {
-              setSelectedRole('teacher');
-              setErrorMessage('');
-              setSuccessMessage('');
-            }}
+            onPress={() => setSelectedRole('teacher')}
             style={[styles.roleTab, selectedRole === 'teacher' && styles.roleTabActiveTeacher]}
           >
             <ShieldCheck size={ICON_SIZES.md} color={selectedRole === 'teacher' ? COLORS.white : COLORS.purple} />
@@ -159,37 +83,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Error / Success Alerts */}
-        {Boolean(errorMessage) && (
-          <View style={styles.errorAlert}>
-            <AlertCircle size={ICON_SIZES.sm} color={COLORS.danger} />
-            <Text style={styles.errorAlertText}>{errorMessage}</Text>
-          </View>
-        )}
-
-        {Boolean(successMessage) && (
-          <View style={styles.successAlert}>
-            <CheckCircle2 size={ICON_SIZES.sm} color={COLORS.success} />
-            <Text style={styles.successAlertText}>{successMessage}</Text>
-          </View>
-        )}
-
         {/* Form Body */}
         {selectedRole === 'student' ? (
           <View style={styles.formContent}>
-            <Text style={styles.inputLabel}>Tên Học Sinh của bạn</Text>
+            <Text style={styles.inputLabel}>Tên Học Sinh Của Bạn</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập tên em (VD: Nguyễn Văn An)..."
+              placeholder="Nhập tên em (VD: Nguyễn Văn Nam)..."
               placeholderTextColor={COLORS.gray400}
               value={studentName}
               onChangeText={setStudentName}
+              autoFocus
             />
 
-            <Text style={styles.inputLabel}>Mã Phòng Học (Nêu có)</Text>
+            <Text style={styles.inputLabel}>Mã Phòng Học</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập mã phòng học từ giáo viên..."
+              placeholder="Nhập Mã Lớp (VD: MATH101)..."
               placeholderTextColor={COLORS.gray400}
               value={roomCode}
               onChangeText={setRoomCode}
@@ -206,88 +116,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           </View>
         ) : (
           <View style={styles.formContent}>
-            {/* Mode Switcher inside Teacher tab */}
-            <View style={styles.authModeSwitch}>
-              <TouchableOpacity
-                onPress={() => {
-                  setIsRegistering(false);
-                  setErrorMessage('');
-                  setSuccessMessage('');
-                }}
-                style={[styles.authModeBtn, !isRegistering && styles.authModeBtnActive]}
-              >
-                <Text style={[styles.authModeText, !isRegistering && styles.authModeTextActive]}>
-                  Đăng Nhập
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => {
-                  setIsRegistering(true);
-                  setErrorMessage('');
-                  setSuccessMessage('');
-                }}
-                style={[styles.authModeBtn, isRegistering && styles.authModeBtnActive]}
-              >
-                <Text style={[styles.authModeText, isRegistering && styles.authModeTextActive]}>
-                  Tạo Tài Khoản Mới
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {isRegistering && (
-              <>
-                <Text style={styles.inputLabel}>Họ và Tên Giáo Viên</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Nhập họ và tên (VD: Nguyễn Thị Hoa)..."
-                  placeholderTextColor={COLORS.gray400}
-                  value={teacherName}
-                  onChangeText={setTeacherName}
-                />
-              </>
-            )}
-
             <Text style={styles.inputLabel}>Email Giáo Viên</Text>
             <TextInput
               style={styles.textInput}
               placeholder="nhap.email@truonghoc.edu.vn"
               placeholderTextColor={COLORS.gray400}
-              keyboardType="email-address"
-              autoCapitalize="none"
               value={teacherEmail}
               onChangeText={setTeacherEmail}
             />
 
-            <Text style={styles.inputLabel}>Mật Khẩu</Text>
+            <Text style={styles.inputLabel}>Mật Khẩu / Mã OTP Auth</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập mật khẩu..."
+              placeholder="••••••••"
               placeholderTextColor={COLORS.gray400}
               secureTextEntry
-              value={teacherPassword}
-              onChangeText={setTeacherPassword}
+              value="123456"
             />
 
-            {isRegistering && (
-              <>
-                <Text style={styles.inputLabel}>Xác Nhận Mật Khẩu</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Nhập lại mật khẩu..."
-                  placeholderTextColor={COLORS.gray400}
-                  secureTextEntry
-                  value={teacherConfirmPassword}
-                  onChangeText={setTeacherConfirmPassword}
-                />
-              </>
-            )}
-
             <Button
-              label={isRegistering ? 'Đăng Ký Tài Khoản Giáo Viên' : 'Đăng Nhập Quản Lý Lớp'}
-              icon={isRegistering ? UserPlus : KeyRound}
+              label="Đăng Nhập Quản Lý Lớp"
+              icon={KeyRound}
               variant="secondary"
-              onPress={handleTeacherAuth}
+              onPress={handleTeacherJoin}
               style={styles.submitBtn}
             />
           </View>
@@ -374,70 +225,6 @@ const styles = StyleSheet.create({
   roleTabTextActive: {
     color: COLORS.white,
   },
-  authModeSwitch: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.gray100,
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 16,
-  },
-  authModeBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  authModeBtnActive: {
-    backgroundColor: COLORS.white,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  authModeText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.gray600,
-  },
-  authModeTextActive: {
-    color: COLORS.purple,
-    fontWeight: '900',
-  },
-  errorAlert: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1.5,
-    borderColor: '#FECACA',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 16,
-  },
-  errorAlertText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.danger,
-  },
-  successAlert: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1.5,
-    borderColor: '#A7F3D0',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 16,
-  },
-  successAlertText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.success,
-  },
   formContent: {
     gap: 12,
   },
@@ -462,5 +249,3 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 });
-
-export default HomeScreen;

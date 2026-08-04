@@ -14,6 +14,7 @@ export interface UseCanvasSyncReturn {
   strokes: CanvasStroke[];
   permissionState: DrawingPermissionState;
   addStroke: (stroke: CanvasStroke) => void;
+  removeStroke: (strokeId: string) => void;
   clearCanvas: () => void;
   updateStudentPermission: (studentId: string, canDraw: boolean) => void;
   setGlobalCanDraw: (canDraw: boolean) => void;
@@ -52,6 +53,12 @@ export function useCanvasSync({
           setStrokes((prev) => [...prev, incomingStroke]);
         }
       })
+      .on('broadcast', { event: 'remove_stroke' }, (payload) => {
+        if (payload.payload) {
+          const strokeId = (payload.payload as { strokeId: string }).strokeId;
+          setStrokes((prev) => prev.filter((s) => s.id !== strokeId));
+        }
+      })
       .on('broadcast', { event: 'clear' }, () => {
         setStrokes([]);
       })
@@ -86,6 +93,26 @@ export function useCanvasSync({
       peerService.broadcastData({
         type: 'stroke',
         payload: newStroke,
+      });
+    },
+    []
+  );
+
+  const removeStroke = useCallback(
+    (strokeId: string) => {
+      setStrokes((prev) => prev.filter((s) => s.id !== strokeId));
+
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'remove_stroke',
+          payload: { strokeId },
+        });
+      }
+
+      peerService.broadcastData({
+        type: 'remove_stroke',
+        payload: { strokeId },
       });
     },
     []
@@ -179,6 +206,7 @@ export function useCanvasSync({
     strokes,
     permissionState,
     addStroke,
+    removeStroke,
     clearCanvas,
     updateStudentPermission,
     setGlobalCanDraw,

@@ -50,24 +50,45 @@ export const syncStudentsWithSupabase = async (): Promise<StudentAccount[]> => {
         teacherId: row.teacher_id,
         fullName: row.full_name,
         username: row.username,
-        passwordText: row.password_hash,
+        passwordText: row.password_hash || '',
       }));
 
-      // Merge DB students and local students
+      // Merge DB students and local students correctly (local accounts have priority for fresh edits)
       const mergedMap = new Map<string, StudentAccount>();
-      dbStudents.forEach((s) => mergedMap.set(s.username.toLowerCase(), s));
+
+      // 1. First add local students
       localList.forEach((s) => {
-        if (!mergedMap.has(s.username.toLowerCase())) {
-          mergedMap.set(s.username.toLowerCase(), s);
-          // Push local-only student (created offline/earlier) up to Supabase Cloud DB
+        if (s && s.username) {
+          mergedMap.set(s.username.trim().toLowerCase(), s);
+        }
+      });
+
+      // 2. Add DB students if not present in local list, or backfill passwordText if missing
+      dbStudents.forEach((dbStudent) => {
+        if (!dbStudent || !dbStudent.username) return;
+        const lowerName = dbStudent.username.trim().toLowerCase();
+        if (!mergedMap.has(lowerName)) {
+          mergedMap.set(lowerName, dbStudent);
+        } else {
+          const existing = mergedMap.get(lowerName)!;
+          if (!existing.passwordText && dbStudent.passwordText) {
+            mergedMap.set(lowerName, { ...existing, passwordText: dbStudent.passwordText });
+          }
+        }
+      });
+
+      // 3. Push local students missing in Cloud DB up to Supabase
+      const dbUsernameSet = new Set(dbStudents.map((s) => s.username?.trim()?.toLowerCase()));
+      localList.forEach((s) => {
+        if (s && s.username && !dbUsernameSet.has(s.username.trim().toLowerCase())) {
           withTimeout(
             supabase.from('students').upsert({
               id: s.id,
               teacher_id: s.teacherId,
               full_name: s.fullName,
-              username: s.username,
+              username: s.username.trim().toLowerCase(),
               password_hash: s.passwordText,
-            }),
+            }, { onConflict: 'username' }),
             2500
           );
         }
@@ -109,14 +130,18 @@ if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
         const newStudent = data.payload as StudentAccount;
         if (newStudent && newStudent.username) {
           const currentList = getTeacherStudents();
-          const exists = currentList.some(
-            (s) => s.username.toLowerCase() === newStudent.username.toLowerCase()
+          const index = currentList.findIndex(
+            (s) => s.username && s.username.trim().toLowerCase() === newStudent.username.trim().toLowerCase()
           );
-          if (!exists) {
-            const updated = [newStudent, ...currentList];
-            if (isWindowAvailable()) {
-              localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(updated));
-            }
+          let updated: StudentAccount[];
+          if (index >= 0) {
+            updated = [...currentList];
+            updated[index] = newStudent;
+          } else {
+            updated = [newStudent, ...currentList];
+          }
+          if (isWindowAvailable()) {
+            localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(updated));
           }
         }
       } else if (data.type === 'REQUEST_STUDENTS_SYNC') {
@@ -132,8 +157,8 @@ if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
         if (Array.isArray(receivedStudents) && receivedStudents.length > 0) {
           const currentList = getTeacherStudents();
           const mergedMap = new Map<string, StudentAccount>();
-          currentList.forEach((s) => mergedMap.set(s.username.toLowerCase(), s));
-          receivedStudents.forEach((s) => mergedMap.set(s.username.toLowerCase(), s));
+          currentList.forEach((s) => s.username && mergedMap.set(s.username.trim().toLowerCase(), s));
+          receivedStudents.forEach((s) => s.username && mergedMap.set(s.username.trim().toLowerCase(), s));
 
           const mergedArray = Array.from(mergedMap.values());
           if (isWindowAvailable()) {
@@ -162,7 +187,6 @@ export const saveAuthSession = (user: UserProfile): void => {
 
     const key = user.role === 'teacher' ? STORAGE_KEYS.TEACHER_AUTH_SESSION : STORAGE_KEYS.STUDENT_AUTH_SESSION;
     localStorage.setItem(key, JSON.stringify(session));
-    localStorage.setItem(STORAGE_KEYS.STUDENT_AUTH_SESSION, JSON.stringify(session));
   } catch (error) {
     console.error('Failed to save auth session:', error);
   }
@@ -338,7 +362,7 @@ export const getTeacherStudents = (teacherId?: string): StudentAccount[] => {
     }
     const allStudents: StudentAccount[] = JSON.parse(raw);
     if (!teacherId) return allStudents;
-    return allStudents.filter((s) => s.teacherId === teacherId);
+    return allStudents.filter((s) => s.teacherId === teacherId || s.teacherId === 'tch-101');
   } catch (error) {
     console.error('Error fetching students:', error);
     return DEFAULT_STUDENTS;
@@ -360,7 +384,7 @@ export const registerStudentAccount = async (
   }
 
   const allStudents = getTeacherStudents();
-  const duplicate = allStudents.find((s) => s.username.toLowerCase() === cleanUsername);
+  const duplicate = allStudents.find((s) => s.username && s.username.trim().toLowerCase() === cleanUsername);
 
   if (duplicate) {
     return { success: false, message: 'Tên đăng nhập này đã được sử dụng. Vui lòng chọn Tên đăng nhập khác.' };
@@ -376,7 +400,7 @@ export const registerStudentAccount = async (
   };
 
   // 1. Save locally
-  const updatedList = [newStudent, ...allStudents];
+  const updatedList = [newStudent, ...allStudents.filter((s) => s.id !== newStudent.id)];
   if (isWindowAvailable()) {
     try {
       localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(updatedList));
@@ -407,7 +431,7 @@ export const registerStudentAccount = async (
           full_name: newStudent.fullName,
           username: newStudent.username,
           password_hash: newStudent.passwordText,
-        }),
+        }, { onConflict: 'username' }),
         3000
       );
     } catch (err) {
@@ -434,7 +458,13 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
   const syncedStudents = await syncStudentsWithSupabase();
 
   let foundStudent: StudentAccount | null =
-    syncedStudents.find((s) => s.username.trim().toLowerCase() === cleanUsername) || null;
+    syncedStudents.find((s) => s.username && s.username.trim().toLowerCase() === cleanUsername) || null;
+
+  // 1b. Direct local fallback check if sync returned list without the student
+  if (!foundStudent) {
+    const localList = getTeacherStudents();
+    foundStudent = localList.find((s) => s.username && s.username.trim().toLowerCase() === cleanUsername) || null;
+  }
 
   // 2. If still not found & Supabase is configured, query Supabase DB explicitly
   if (!foundStudent && isSupabaseConfigured()) {
@@ -454,7 +484,7 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
           teacherId: res.data.teacher_id,
           fullName: res.data.full_name,
           username: res.data.username,
-          passwordText: res.data.password_hash,
+          passwordText: res.data.password_hash || '',
         };
 
         const currentList = getTeacherStudents();
@@ -472,7 +502,8 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
     return { success: false, message: 'Tài khoản không tồn tại. Vui lòng kiểm tra lại Tên đăng nhập!' };
   }
 
-  if (foundStudent.passwordText.trim() !== cleanPassword) {
+  const storedPassword = (foundStudent.passwordText || '').trim();
+  if (storedPassword !== cleanPassword) {
     return { success: false, message: 'Mật khẩu không chính xác!' };
   }
 

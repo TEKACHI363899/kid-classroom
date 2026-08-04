@@ -118,7 +118,7 @@ export const App: React.FC = () => {
     return (
       <View style={styles.appWrapper}>
         <Header userName={currentUser.fullName} role={currentUser.role} onLogout={handleLogout} />
-        <TeacherDashboard onStartRoom={handleStartRoom} />
+        <TeacherDashboard user={currentUser} onStartRoom={handleStartRoom} />
       </View>
     );
   }

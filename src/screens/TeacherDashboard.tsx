@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
 import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus, Trash2, StopCircle, Eye, EyeOff } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
-import type { StudentAccount, Classroom } from '../types';
+import type { StudentAccount, Classroom, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import {
@@ -16,10 +16,11 @@ import {
 } from '../services/storageService';
 
 export interface TeacherDashboardProps {
+  user?: UserProfile;
   onStartRoom: (roomCode: string, title: string) => void;
 }
 
-export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom }) => {
+export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStartRoom }) => {
   const [students, setStudents] = useState<StudentAccount[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
 
@@ -40,10 +41,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const activeTeacherId = user?.id || 'tch-101';
+
   useEffect(() => {
-    setClassrooms(getTeacherClassrooms());
-    setStudents(getTeacherStudents());
-  }, []);
+    setClassrooms(getTeacherClassrooms(activeTeacherId));
+    setStudents(getTeacherStudents(activeTeacherId));
+  }, [activeTeacherId]);
 
   const handleAddStudentSubmit = async () => {
     setAddStudentError(null);
@@ -55,14 +58,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
     setLoading(true);
     try {
       const res = await registerStudentAccount(
-        'tch-101',
+        activeTeacherId,
         newStudentFullName,
         newStudentUsername,
         newStudentPassword
       );
 
       if (res.success) {
-        setStudents(getTeacherStudents());
+        setStudents(getTeacherStudents(activeTeacherId));
         setNewStudentFullName('');
         setNewStudentUsername('');
         setNewStudentPassword('');

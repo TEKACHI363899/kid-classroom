@@ -1,6 +1,6 @@
 -- ==========================================
 -- SUPABASE SQL DATABASE SCHEMA & SECURITY POLICIES
--- Interactive Kid Classroom Web Application
+-- Interactive Kid Classroom Web Application (Version 3.1)
 -- ==========================================
 
 -- 0. Enable UUID extension
@@ -24,15 +24,16 @@ CREATE TABLE IF NOT EXISTS public.teacher_students (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Classrooms / Schedules Table
+-- 3. Classrooms / Schedules Table (Version 3.1 Schema)
 CREATE TABLE IF NOT EXISTS public.classrooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(255) NOT NULL,
     teacher_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    room_code VARCHAR(50) UNIQUE NOT NULL,
     scheduled_start TIMESTAMP WITH TIME ZONE NOT NULL,
     scheduled_end TIMESTAMP WITH TIME ZONE NOT NULL,
-    room_code VARCHAR(50) UNIQUE NOT NULL,
-    is_active BOOLEAN DEFAULT false,
+    status VARCHAR(50) DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'live', 'ended')),
+    is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -53,28 +54,26 @@ ALTER TABLE public.classrooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classroom_students ENABLE ROW LEVEL SECURITY;
 
 -- 6. RLS Policies
--- Allow public read access to classrooms by room_code for zero-friction student entry
 CREATE POLICY "Allow public read classrooms by room_code" 
 ON public.classrooms FOR SELECT USING (true);
 
--- Allow public insert and update for demo classrooms
 CREATE POLICY "Allow public create classrooms" 
 ON public.classrooms FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Allow public update classrooms" 
 ON public.classrooms FOR UPDATE USING (true);
 
--- Allow public read & management of classroom_students
+CREATE POLICY "Allow public delete classrooms" 
+ON public.classrooms FOR DELETE USING (true);
+
 CREATE POLICY "Allow public read classroom_students" 
 ON public.classroom_students FOR SELECT USING (true);
 
 CREATE POLICY "Allow public manage classroom_students" 
 ON public.classroom_students FOR ALL USING (true);
 
--- Allow public access to profiles for demo mode
 CREATE POLICY "Allow public profiles access" 
 ON public.profiles FOR ALL USING (true);
 
--- Allow public access to teacher_students
 CREATE POLICY "Allow public teacher_students access" 
 ON public.teacher_students FOR ALL USING (true);

@@ -2,6 +2,8 @@ export type UserRole = 'teacher' | 'student';
 
 export type ToolType = 'pencil' | 'text' | 'eraser' | 'select';
 
+export type ClassroomStatus = 'scheduled' | 'live' | 'ended';
+
 export interface UserProfile {
   id: string;
   fullName: string;
@@ -60,7 +62,9 @@ export interface Classroom {
   scheduledStart: string;
   scheduledEnd: string;
   roomCode: string;
-  isActive: boolean;
+  status: ClassroomStatus;
+  assignedStudents?: string[];
+  isActive?: boolean;
   createdAt?: string;
 }
 

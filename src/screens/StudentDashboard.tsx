@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Video, Calendar, Sparkles, Smile, BookOpen } from 'lucide-react';
+import { Video, Calendar, Sparkles, Smile } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserProfile, Classroom } from '../types';
 import { Button } from '../components/common/Button';
@@ -15,11 +15,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoin
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
 
   useEffect(() => {
-    const loadedRooms = getTeacherClassrooms();
-    setClassrooms(loadedRooms);
+    setClassrooms(getTeacherClassrooms());
   }, []);
 
-  const activeClassroom = classrooms.find((c) => c.isActive) || classrooms[0];
+  const liveClass = classrooms.find((c) => c.status === 'live' || c.isActive);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -32,76 +31,81 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoin
           <View style={styles.welcomeTextGroup}>
             <Text style={styles.welcomeTitle}>Chào mừng em, {user.fullName}!</Text>
             <Text style={styles.welcomeSub}>
-              Hôm nay em có bài học thú vị đang chờ đó. Hãy chọn lớp bên dưới để bắt đầu học nhé!
+              Hôm nay em có bài học thú vị đang chờ đó. Hãy xem lịch học dưới đây và chọn bài học để tham gia nhé!
             </Text>
           </View>
         </View>
 
-        {/* Featured Immediate Join Card if active classroom exists */}
-        {activeClassroom ? (
+        {/* Featured Live Class (if available) */}
+        {liveClass && (
           <View style={styles.featuredCard}>
             <View style={styles.featuredTag}>
               <Sparkles size={ICON_SIZES.sm} color={COLORS.white} />
-              <Text style={styles.featuredTagText}>LỚP HỌC KHUYẾN NGHỊ</Text>
+              <Text style={styles.featuredTagText}>LỚP ĐANG DIỄN RA (LIVE)</Text>
             </View>
 
-            <Text style={styles.featuredTitle}>{activeClassroom.title}</Text>
-            <Text style={styles.featuredTeacher}>Mã Phòng Học: {activeClassroom.roomCode}</Text>
+            <Text style={styles.featuredTitle}>{liveClass.title}</Text>
+            <Text style={styles.featuredTeacher}>Giáo viên: Cô Nông Thị Tuyết</Text>
 
             <Button
               label="VÀO LỚP NGAY TẠI ĐÂY"
               icon={Video}
               variant="success"
               size="lg"
-              onPress={() => onJoinRoom(activeClassroom.roomCode, activeClassroom.title)}
+              onPress={() => onJoinRoom(liveClass.roomCode, liveClass.title)}
               style={styles.joinBtn}
             />
-          </View>
-        ) : (
-          <View style={styles.emptyFeaturedCard}>
-            <View style={styles.emptyIconBadge}>
-              <BookOpen size={ICON_SIZES.xl} color={COLORS.primary} />
-            </View>
-            <Text style={styles.emptyFeaturedTitle}>Chưa có lớp học nào khả dụng</Text>
-            <Text style={styles.emptyFeaturedSub}>
-              Vui lòng nhập Mã Phòng Học từ thầy cô giáo ở màn hình chính hoặc chờ thầy cô mở lớp nhé!
-            </Text>
           </View>
         )}
 
         {/* Upcoming Classes List */}
         <View style={styles.sectionHeader}>
           <Calendar size={ICON_SIZES.lg} color={COLORS.primary} />
-          <Text style={styles.sectionTitle}>Danh Sách Lịch Học ({classrooms.length})</Text>
+          <Text style={styles.sectionTitle}>Danh Sách Lịch Học Của Em ({classrooms.length})</Text>
         </View>
 
-        {classrooms.length === 0 ? (
-          <View style={styles.emptyListCard}>
-            <Text style={styles.emptyListText}>Hiện chưa có danh sách lớp học nào được đăng tải.</Text>
-          </View>
-        ) : (
-          <View style={styles.classList}>
-            {classrooms.map((cls) => (
+        <View style={styles.classList}>
+          {classrooms.map((cls) => {
+            const isLive = cls.status === 'live' || cls.isActive;
+            const isEnded = cls.status === 'ended';
+
+            const statusLabel = isLive
+              ? 'Đang Học (Live)'
+              : isEnded
+              ? 'Đã Kết Thúc'
+              : 'Sắp Diễn Ra';
+
+            const statusBg = isLive ? '#ECFDF5' : isEnded ? '#FFE4E6' : '#FEF3C7';
+            const statusCol = isLive ? COLORS.success : isEnded ? COLORS.danger : COLORS.warning;
+
+            return (
               <View key={cls.id} style={styles.classCard}>
                 <View style={styles.classCardHeader}>
                   <View style={styles.classBadge}>
                     <Sparkles size={ICON_SIZES.md} color={COLORS.primary} />
                   </View>
                   <View style={styles.classDetails}>
-                    <Text style={styles.classTitle}>{cls.title}</Text>
+                    <View style={styles.titleStatusRow}>
+                      <Text style={styles.classTitle}>{cls.title}</Text>
+                      <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+                        <Text style={[styles.statusText, { color: statusCol }]}>{statusLabel}</Text>
+                      </View>
+                    </View>
                     <Text style={styles.classCode}>Mã Phòng: {cls.roomCode}</Text>
                   </View>
                 </View>
+
                 <Button
-                  label="Tham Gia Lớp"
+                  label={isLive ? 'Tham Gia Lớp' : isEnded ? 'Đã Kết Thúc' : 'Chưa Đến Giờ'}
                   icon={Video}
-                  variant={cls.isActive ? 'success' : 'primary'}
+                  variant={isLive ? 'success' : 'outline'}
+                  disabled={!isLive}
                   onPress={() => onJoinRoom(cls.roomCode, cls.title)}
                 />
               </View>
-            ))}
-          </View>
-        )}
+            );
+          })}
+        </View>
       </View>
     </ScrollView>
   );
@@ -203,42 +207,6 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
   },
-  emptyFeaturedCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 28,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.gray200,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  emptyIconBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  emptyFeaturedTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: COLORS.textDark,
-    marginBottom: 6,
-  },
-  emptyFeaturedSub: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.gray600,
-    textAlign: 'center',
-    maxWidth: 480,
-    lineHeight: 20,
-  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -249,17 +217,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: COLORS.textDark,
-  },
-  emptyListCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyListText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.gray600,
   },
   classList: {
     gap: 14,
@@ -297,11 +254,25 @@ const styles = StyleSheet.create({
   classDetails: {
     flex: 1,
   },
+  titleStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   classTitle: {
     fontSize: 17,
     fontWeight: '800',
     color: COLORS.textDark,
-    marginBottom: 2,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
   classCode: {
     fontSize: 13,
@@ -309,5 +280,3 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 });
-
-export default StudentDashboard;

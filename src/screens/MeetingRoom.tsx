@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput } from 'react-native';
-import { Lock, RefreshCw, UserCheck } from 'lucide-react';
+import { Lock, RefreshCw, UserCheck, PhoneOff } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserProfile, StreamParticipant } from '../types';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
 import { useCanvasSync } from '../hooks/useCanvasSync';
 import { peerService } from '../services/peerService';
+import { supabase } from '../services/supabaseClient';
+import { endClassroomByCode } from '../services/storageService';
 
 import { Header } from '../components/common/Header';
 import { VideoGrid } from '../components/classroom/VideoGrid';
@@ -25,7 +27,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   roomTitle = 'Lớp Học Trực Tuyến Tương Tác',
   onLeaveRoom,
 }) => {
-  // Bug 2: Incognito Session Isolation in sessionStorage
+  // Session Isolation in sessionStorage
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     if (typeof window !== 'undefined') {
       const sessName = sessionStorage.getItem(`student_name_${roomCode}`);
@@ -41,7 +43,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     return initialUser;
   });
 
-  // Bug 2: Modal mandatory state when anonymous student accesses room link
   const [joinModalVisible, setJoinModalVisible] = useState<boolean>(!currentUser);
   const [inputStudentName, setInputStudentName] = useState<string>('');
 
@@ -57,13 +58,15 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   // Connection & Modals State
   const [connectionStatus, setConnectionStatus] = useState<string>('connected');
   const [exitModalVisible, setExitModalVisible] = useState<boolean>(false);
+  const [endClassModalVisible, setEndClassModalVisible] = useState<boolean>(false);
+  const [endedByTeacherNoticeVisible, setEndedByTeacherNoticeVisible] = useState<boolean>(false);
   const [permissionModalVisible, setPermissionModalVisible] = useState<boolean>(false);
   const [copiedLinkSuccess, setCopiedLinkSuccess] = useState<boolean>(false);
 
-  // Bug 1: 100% Dynamic active participants (starts empty, no hardcoded An/Bình)
+  // Dynamic active participants
   const [participants, setParticipants] = useState<StreamParticipant[]>([]);
 
-  // Bug 2: Handle Incognito Student Join Name Submission
+  // Handle Anonymous Join Name Submission
   const handleAnonymousJoin = () => {
     const cleanName = inputStudentName.trim() || 'Học Sinh Mới';
     const newStudentId = `std-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -83,7 +86,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     setJoinModalVisible(false);
   };
 
-  // Sync local participant to dynamic participants list
+  // Sync local participant
   useEffect(() => {
     if (!currentUser) return;
 
@@ -107,6 +110,29 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     });
   }, [currentUser]);
 
+  // Version 3.1: Supabase Realtime Channel for CLASSROOM_ENDED Signal
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName, {
+      config: { broadcast: { self: false } },
+    });
+
+    channel
+      .on('broadcast', { event: 'CLASSROOM_ENDED' }, () => {
+        if (!isTeacher) {
+          peerService.disconnect();
+          setEndedByTeacherNoticeVisible(true);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomCode, isTeacher]);
+
   // Realtime Canvas Hook
   const {
     strokes,
@@ -124,7 +150,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     isTeacher: isTeacher || false,
   });
 
-  // Initialize PeerJS & Media Streams when currentUser is defined
+  // Initialize PeerJS & Media Streams
   useEffect(() => {
     if (!currentUser) return;
 
@@ -145,6 +171,13 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           prev.map((p) => (p.id === peerId ? { ...p, stream } : p))
         );
       },
+      onDataReceived: (data) => {
+        const msg = data as { type: string };
+        if (msg && msg.type === 'CLASSROOM_ENDED' && !isTeacher) {
+          peerService.disconnect();
+          setEndedByTeacherNoticeVisible(true);
+        }
+      },
     });
 
     peerService.startLocalMedia(true, true);
@@ -152,7 +185,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     return () => {
       peerService.disconnect();
     };
-  }, [currentUser]);
+  }, [currentUser, isTeacher]);
 
   const handleToggleMic = () => {
     if (!currentUser) return;
@@ -197,6 +230,26 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       setCopiedLinkSuccess(true);
       setTimeout(() => setCopiedLinkSuccess(false), 2500);
     }
+  };
+
+  // Version 3.1: Teacher Confirm End Classroom Action
+  const handleConfirmEndClassroom = () => {
+    endClassroomByCode(roomCode);
+
+    // Broadcast CLASSROOM_ENDED via Supabase & PeerJS
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+    channel.send({
+      type: 'broadcast',
+      event: 'CLASSROOM_ENDED',
+      payload: {},
+    });
+
+    peerService.broadcastData({ type: 'CLASSROOM_ENDED' });
+    peerService.disconnect();
+
+    setEndClassModalVisible(false);
+    onLeaveRoom();
   };
 
   return (
@@ -251,10 +304,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         onToggleGlobalDraw={() => setGlobalCanDraw(!permissionState.globalCanDraw)}
         onCopyRoomLink={handleCopyRoomLink}
         onLeaveClass={() => setExitModalVisible(true)}
+        onEndClassroom={() => setEndClassModalVisible(true)}
         copiedSuccess={copiedLinkSuccess}
       />
 
-      {/* Bug 2: Mandatory JoinRoomNameModal for Anonymous Incognito visitors */}
+      {/* Mandatory JoinRoomNameModal for Anonymous visitors */}
       <Modal
         visible={joinModalVisible}
         onClose={() => {}}
@@ -274,6 +328,30 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           onSubmitEditing={handleAnonymousJoin}
         />
       </Modal>
+
+      {/* Version 3.1: Teacher End Classroom Confirmation Modal */}
+      <Modal
+        visible={endClassModalVisible}
+        onClose={() => setEndClassModalVisible(false)}
+        title="Xác Nhận Kết Thúc Buổi Học"
+        icon={PhoneOff}
+        description="Bạn có chắc chắn muốn kết thúc buổi học? Tất cả học sinh sẽ được mời ra khỏi phòng và buổi học này sẽ được cập nhật kết thúc."
+        confirmLabel="Xác Nhận Kết Thúc"
+        confirmVariant="danger"
+        onConfirm={handleConfirmEndClassroom}
+        cancelLabel="Hủy"
+      />
+
+      {/* Version 3.1: Student Kick-out Notice Modal when Teacher Ends Classroom */}
+      <Modal
+        visible={endedByTeacherNoticeVisible}
+        onClose={onLeaveRoom}
+        title="Buổi Học Đã Kết Thúc"
+        description="Buổi học đã được kết thúc bởi Giáo viên. Bạn sẽ được chuyển hướng về lại Màn hình Lịch học."
+        confirmLabel="Trở Về Dashboard"
+        confirmVariant="primary"
+        onConfirm={onLeaveRoom}
+      />
 
       {/* Exit Class Confirmation Modal */}
       <Modal

@@ -1,10 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
-import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus } from 'lucide-react';
+import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus, Trash2, StopCircle } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { TeacherStudent, Classroom } from '../types';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import {
+  getTeacherClassrooms,
+  saveTeacherClassroom,
+  updateClassroomStatus,
+  deleteTeacherClassroom,
+  getTeacherStudents,
+  saveTeacherStudent,
+} from '../services/storageService';
 
 export interface TeacherDashboardProps {
   onStartRoom: (roomCode: string, title: string) => void;
@@ -12,18 +20,7 @@ export interface TeacherDashboardProps {
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom }) => {
   const [students, setStudents] = useState<TeacherStudent[]>([]);
-
-  const [classrooms, setClassrooms] = useState<Classroom[]>([
-    {
-      id: 'cls-001',
-      title: 'Bài 1: Toán Tư Duy - Hình Học Cơ Bản',
-      teacherId: 'tch-101',
-      scheduledStart: new Date().toISOString(),
-      scheduledEnd: new Date(Date.now() + 3600000).toISOString(),
-      roomCode: 'MATH101',
-      isActive: true,
-    },
-  ]);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
 
   // Add Student Modal
   const [addStudentVisible, setAddStudentVisible] = useState<boolean>(false);
@@ -35,6 +32,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  useEffect(() => {
+    setClassrooms(getTeacherClassrooms());
+    setStudents(getTeacherStudents());
+  }, []);
+
   const handleAddStudent = () => {
     if (!newStudentName.trim()) return;
     const accessCode = `STD${Math.floor(1000 + Math.random() * 9000)}`;
@@ -44,7 +46,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
       studentName: newStudentName.trim(),
       accessCode,
     };
-    setStudents((prev) => [newStudent, ...prev]);
+    const updated = saveTeacherStudent(newStudent);
+    setStudents(updated);
     setNewStudentName('');
     setAddStudentVisible(false);
   };
@@ -59,15 +62,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
       scheduledStart: new Date().toISOString(),
       scheduledEnd: new Date(Date.now() + 3600000).toISOString(),
       roomCode,
-      isActive: true,
+      status: 'scheduled',
+      isActive: false,
     };
-    setClassrooms((prev) => [newClassroom, ...prev]);
+    const updated = saveTeacherClassroom(newClassroom);
+    setClassrooms(updated);
     setNewTitle('');
     setAddScheduleVisible(false);
   };
 
+  const handleOpenRoom = (cls: Classroom) => {
+    const updated = updateClassroomStatus(cls.id, 'live');
+    setClassrooms(updated);
+    onStartRoom(cls.roomCode, cls.title);
+  };
+
+  const handleEndClassroom = (classroomId: string) => {
+    const updated = updateClassroomStatus(classroomId, 'ended');
+    setClassrooms(updated);
+  };
+
+  const handleDeleteClassroom = (classroomId: string) => {
+    const updated = deleteTeacherClassroom(classroomId);
+    setClassrooms(updated);
+  };
+
   const copyParentLink = (std: TeacherStudent) => {
-    const parentLink = `${window.location.origin}/join/MATH101?name=${encodeURIComponent(std.studentName)}`;
+    const parentLink = `${window.location.origin}/login?student_code=${std.accessCode}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(parentLink);
       setCopiedId(std.id);
@@ -88,7 +109,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
             label="Mở Phòng Học Ngay"
             icon={Video}
             variant="success"
-            onPress={() => onStartRoom('MATH101', 'Lớp Học Tương Tác Trực Tiếp')}
+            onPress={() => {
+              const liveCode = 'MATH101';
+              onStartRoom(liveCode, 'Lớp Học Tương Tác Trực Tiếp');
+            }}
           />
         </View>
 
@@ -135,7 +159,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
                     <Copy size={ICON_SIZES.sm} color={COLORS.primary} />
                   )}
                   <Text style={[styles.copyLinkText, copiedId === std.id && { color: COLORS.success }]}>
-                    {copiedId === std.id ? 'Đã Sao Chép!' : 'Sao Chép Link Phụ Huynh'}
+                    {copiedId === std.id ? 'Đã Sao Chép!' : 'Link Đăng Nhập Phụ Huynh'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -159,23 +183,72 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
         </View>
 
         <View style={styles.classroomList}>
-          {classrooms.map((cls) => (
-            <View key={cls.id} style={styles.classroomCard}>
-              <View style={styles.clsInfo}>
-                <Text style={styles.clsTitle}>{cls.title}</Text>
-                <Text style={styles.clsTime}>
-                  Mã Lớp: {cls.roomCode} | Trạng Thái: {cls.isActive ? 'Đang Mở' : 'Chưa Mở'}
-                </Text>
+          {classrooms.map((cls) => {
+            const statusLabel =
+              cls.status === 'live'
+                ? 'Đang Học (Live)'
+                : cls.status === 'ended'
+                ? 'Đã Kết Thúc'
+                : 'Sắp Diễn Ra';
+
+            const statusBg =
+              cls.status === 'live'
+                ? '#ECFDF5'
+                : cls.status === 'ended'
+                ? '#FFE4E6'
+                : '#FEF3C7';
+
+            const statusTextCol =
+              cls.status === 'live'
+                ? COLORS.success
+                : cls.status === 'ended'
+                ? COLORS.danger
+                : COLORS.warning;
+
+            return (
+              <View key={cls.id} style={styles.classroomCard}>
+                <View style={styles.clsInfo}>
+                  <View style={styles.titleStatusRow}>
+                    <Text style={styles.clsTitle}>{cls.title}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+                      <Text style={[styles.statusBadgeText, { color: statusTextCol }]}>
+                        {statusLabel}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.clsTime}>Mã Phòng: {cls.roomCode}</Text>
+                </View>
+
+                <View style={styles.clsActionsRow}>
+                  {cls.status !== 'ended' ? (
+                    <Button
+                      label={cls.status === 'live' ? 'Vào Lớp' : 'Mở Lớp (Live)'}
+                      icon={Video}
+                      variant={cls.status === 'live' ? 'success' : 'primary'}
+                      size="sm"
+                      onPress={() => handleOpenRoom(cls)}
+                    />
+                  ) : null}
+
+                  {cls.status === 'live' && (
+                    <TouchableOpacity
+                      onPress={() => handleEndClassroom(cls.id)}
+                      style={styles.endBtnMini}
+                    >
+                      <StopCircle size={18} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    onPress={() => handleDeleteClassroom(cls.id)}
+                    style={styles.deleteBtnMini}
+                  >
+                    <Trash2 size={18} color={COLORS.gray600} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Button
-                label="Vào Lớp"
-                icon={Video}
-                variant={cls.isActive ? 'success' : 'outline'}
-                size="sm"
-                onPress={() => onStartRoom(cls.roomCode, cls.title)}
-              />
-            </View>
-          ))}
+            );
+          })}
         </View>
       </View>
 
@@ -382,16 +455,45 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 240,
   },
+  titleStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+  },
   clsTitle: {
     fontSize: 17,
     fontWeight: '800',
     color: COLORS.textDark,
-    marginBottom: 4,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   clsTime: {
     fontSize: 13,
     fontWeight: '600',
     color: COLORS.gray600,
+  },
+  clsActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  endBtnMini: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#FFE4E6',
+  },
+  deleteBtnMini: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: COLORS.gray100,
   },
   modalInput: {
     borderWidth: 2,

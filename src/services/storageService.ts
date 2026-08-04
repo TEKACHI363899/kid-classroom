@@ -1,4 +1,4 @@
-import type { TeacherAccount, TeacherStudent, Classroom, AuthResponse, UserProfile } from '../types';
+import type { TeacherAccount, TeacherStudent, Classroom, AuthResponse, UserProfile, ClassroomStatus } from '../types';
 
 const STORAGE_KEYS = {
   TEACHERS: 'kid_classroom_teachers',
@@ -9,6 +9,30 @@ const STORAGE_KEYS = {
 const isWindowAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 };
+
+// Initial default classrooms list if localStorage is empty
+const DEFAULT_CLASSROOMS: Classroom[] = [
+  {
+    id: 'cls-001',
+    title: 'Bài 1: Toán Tư Duy - Hình Học Cơ Bản',
+    teacherId: 'tch-101',
+    scheduledStart: new Date().toISOString(),
+    scheduledEnd: new Date(Date.now() + 3600000).toISOString(),
+    roomCode: 'MATH101',
+    status: 'live',
+    isActive: true,
+  },
+  {
+    id: 'cls-002',
+    title: 'Bài 2: Tiếng Anh Giao Tiếp Trẻ Em',
+    teacherId: 'tch-101',
+    scheduledStart: new Date(Date.now() + 86400000).toISOString(),
+    scheduledEnd: new Date(Date.now() + 90000000).toISOString(),
+    roomCode: 'ENG202',
+    status: 'scheduled',
+    isActive: false,
+  },
+];
 
 export const getTeacherAccounts = (): TeacherAccount[] => {
   if (!isWindowAvailable()) return [];
@@ -65,7 +89,7 @@ export const registerTeacher = (fullName: string, email: string, password: strin
 
   return {
     success: true,
-    message: 'Tạo tài khoản thành công! Hệ thống đang đăng nhập...',
+    message: 'Tạo tài khoản thành công! Hệ thống đang chuyển về Dashboard...',
     user: userProfile,
   };
 };
@@ -141,17 +165,27 @@ export const deleteTeacherStudent = (studentId: string, teacherId?: string): Tea
   return teacherId ? updated.filter((s) => s.teacherId === teacherId) : updated;
 };
 
+// Classroom Management Functions (Version 3.1)
 export const getTeacherClassrooms = (teacherId?: string): Classroom[] => {
-  if (!isWindowAvailable()) return [];
+  if (!isWindowAvailable()) return DEFAULT_CLASSROOMS;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CLASSROOMS);
-    const allRooms: Classroom[] = raw ? JSON.parse(raw) : [];
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(DEFAULT_CLASSROOMS));
+      return DEFAULT_CLASSROOMS;
+    }
+    const allRooms: Classroom[] = JSON.parse(raw);
     if (!teacherId) return allRooms;
     return allRooms.filter((r) => r.teacherId === teacherId);
   } catch (error) {
     console.error('Error fetching classrooms:', error);
-    return [];
+    return DEFAULT_CLASSROOMS;
   }
+};
+
+export const getClassroomByCode = (roomCode: string): Classroom | null => {
+  const allRooms = getTeacherClassrooms();
+  return allRooms.find((r) => r.roomCode.toLowerCase() === roomCode.toLowerCase()) || null;
 };
 
 export const saveTeacherClassroom = (classroom: Classroom): Classroom[] => {
@@ -162,6 +196,38 @@ export const saveTeacherClassroom = (classroom: Classroom): Classroom[] => {
       localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(updated));
     } catch (error) {
       console.error('Failed to save classroom:', error);
+    }
+  }
+  return updated;
+};
+
+export const updateClassroomStatus = (classroomId: string, status: ClassroomStatus): Classroom[] => {
+  const allRooms = getTeacherClassrooms();
+  const updated = allRooms.map((r) =>
+    r.id === classroomId ? { ...r, status, isActive: status === 'live' } : r
+  );
+  if (isWindowAvailable()) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(updated));
+    } catch (error) {
+      console.error('Failed to update classroom status:', error);
+    }
+  }
+  return updated;
+};
+
+export const endClassroomByCode = (roomCode: string): Classroom[] => {
+  const allRooms = getTeacherClassrooms();
+  const updated = allRooms.map((r) =>
+    r.roomCode.toLowerCase() === roomCode.toLowerCase()
+      ? { ...r, status: 'ended' as ClassroomStatus, isActive: false }
+      : r
+  );
+  if (isWindowAvailable()) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(updated));
+    } catch (error) {
+      console.error('Failed to end classroom:', error);
     }
   }
   return updated;

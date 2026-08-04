@@ -9,6 +9,7 @@ import {
   Pencil,
   Copy,
   LogOut,
+  PhoneOff,
   CheckCircle,
 } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../../constants';
@@ -26,6 +27,7 @@ export interface ControlsBarProps {
   onToggleGlobalDraw: () => void;
   onCopyRoomLink: () => void;
   onLeaveClass: () => void;
+  onEndClassroom?: () => void;
   copiedSuccess?: boolean;
 }
 
@@ -41,6 +43,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   onToggleGlobalDraw,
   onCopyRoomLink,
   onLeaveClass,
+  onEndClassroom,
   copiedSuccess,
 }) => {
   const { canScreenShare } = getDeviceInfo();
@@ -112,11 +115,19 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           </Text>
         </TouchableOpacity>
 
-        {/* Leave Class Button */}
-        <TouchableOpacity onPress={onLeaveClass} style={[styles.btn, styles.btnExit]}>
-          <LogOut size={ICON_SIZES.md} color={COLORS.white} />
-          <Text style={styles.btnLabel}>Thoát Lớp</Text>
-        </TouchableOpacity>
+        {/* Teacher-only: End Classroom Button */}
+        {isTeacher && onEndClassroom ? (
+          <TouchableOpacity onPress={onEndClassroom} style={[styles.btn, styles.btnEndClass]}>
+            <PhoneOff size={ICON_SIZES.md} color={COLORS.white} />
+            <Text style={styles.btnLabel}>Kết Thúc Lớp Học</Text>
+          </TouchableOpacity>
+        ) : (
+          /* Student: Leave Class Button */
+          <TouchableOpacity onPress={onLeaveClass} style={[styles.btn, styles.btnExit]}>
+            <LogOut size={ICON_SIZES.md} color={COLORS.white} />
+            <Text style={styles.btnLabel}>Thoát Lớp</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -171,6 +182,9 @@ const styles = StyleSheet.create({
   },
   btnExit: {
     backgroundColor: COLORS.danger,
+  },
+  btnEndClass: {
+    backgroundColor: '#EF4444',
   },
   btnOutline: {
     backgroundColor: COLORS.white,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput } from 'react-native';
-import { Lock, RefreshCw, UserCheck, PhoneOff } from 'lucide-react';
+import { View, Text, StyleSheet } from 'react-native';
+import { Lock, RefreshCw, PhoneOff } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserProfile, StreamParticipant } from '../types';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
@@ -22,31 +22,19 @@ export interface MeetingRoomProps {
 }
 
 export const MeetingRoom: React.FC<MeetingRoomProps> = ({
-  user: initialUser,
+  user,
   roomCode,
   roomTitle = 'Lớp Học Trực Tuyến Tương Tác',
   onLeaveRoom,
 }) => {
-  // Session Isolation in sessionStorage
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    if (typeof window !== 'undefined') {
-      const sessName = sessionStorage.getItem(`student_name_${roomCode}`);
-      const sessId = sessionStorage.getItem(`student_id_${roomCode}`);
-      if (sessName && sessId) {
-        return {
-          id: sessId,
-          fullName: sessName,
-          role: 'student',
-        };
-      }
-    }
-    return initialUser;
-  });
+  // Version 5.0: Student profile is 100% derived from authenticated profile! Zero name modals.
+  const currentUser: UserProfile = user || {
+    id: `std-${Date.now()}`,
+    fullName: 'Học Sinh Thân Yêu',
+    role: 'student',
+  };
 
-  const [joinModalVisible, setJoinModalVisible] = useState<boolean>(!currentUser);
-  const [inputStudentName, setInputStudentName] = useState<string>('');
-
-  const isTeacher = currentUser?.role === 'teacher';
+  const isTeacher = currentUser.role === 'teacher';
   const { container16x9 } = useResponsiveLayout();
 
   // Media States
@@ -66,30 +54,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   // Dynamic active participants
   const [participants, setParticipants] = useState<StreamParticipant[]>([]);
 
-  // Handle Anonymous Join Name Submission
-  const handleAnonymousJoin = () => {
-    const cleanName = inputStudentName.trim() || 'Học Sinh Mới';
-    const newStudentId = `std-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(`student_name_${roomCode}`, cleanName);
-      sessionStorage.setItem(`student_id_${roomCode}`, newStudentId);
-    }
-
-    const newUser: UserProfile = {
-      id: newStudentId,
-      fullName: cleanName,
-      role: 'student',
-    };
-
-    setCurrentUser(newUser);
-    setJoinModalVisible(false);
-  };
-
   // Sync local participant
   useEffect(() => {
-    if (!currentUser) return;
-
     setParticipants((prev) => {
       const exists = prev.some((p) => p.id === currentUser.id);
       if (!exists) {
@@ -110,7 +76,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     });
   }, [currentUser]);
 
-  // Version 3.1: Supabase Realtime Channel for CLASSROOM_ENDED Signal
+  // Realtime Broadcast Listener for CLASSROOM_ENDED
   useEffect(() => {
     if (!roomCode) return;
 
@@ -133,7 +99,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     };
   }, [roomCode, isTeacher]);
 
-  // Realtime Canvas Hook
+  // Realtime Canvas Sync Hook
   const {
     strokes,
     addStroke,
@@ -145,15 +111,13 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     canCurrentUserDraw,
   } = useCanvasSync({
     roomId: roomCode,
-    userId: currentUser?.id || 'anon',
-    userName: currentUser?.fullName || 'Học Sinh',
-    isTeacher: isTeacher || false,
+    userId: currentUser.id,
+    userName: currentUser.fullName,
+    isTeacher,
   });
 
   // Initialize PeerJS & Media Streams
   useEffect(() => {
-    if (!currentUser) return;
-
     peerService.initialize(currentUser.id, {
       onConnectionStatusChange: (status) => {
         setConnectionStatus(status);
@@ -188,7 +152,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   }, [currentUser, isTeacher]);
 
   const handleToggleMic = () => {
-    if (!currentUser) return;
     const nextState = !isMicOn;
     setIsMicOn(nextState);
     peerService.toggleAudio(nextState);
@@ -198,7 +161,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   };
 
   const handleToggleCam = () => {
-    if (!currentUser) return;
     const nextState = !isCamOn;
     setIsCamOn(nextState);
     peerService.toggleVideo(nextState);
@@ -232,11 +194,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     }
   };
 
-  // Version 3.1: Teacher Confirm End Classroom Action
   const handleConfirmEndClassroom = () => {
     endClassroomByCode(roomCode);
 
-    // Broadcast CLASSROOM_ENDED via Supabase & PeerJS
     const channelName = `room_status_${roomCode}`;
     const channel = supabase.channel(channelName);
     channel.send({
@@ -255,13 +215,13 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   return (
     <View style={styles.roomContainer}>
       <Header
-        userName={currentUser?.fullName || 'Học Sinh'}
-        role={currentUser?.role || 'student'}
+        userName={currentUser.fullName}
+        role={currentUser.role}
         roomTitle={`${roomTitle} (${roomCode})`}
         onLogout={() => setExitModalVisible(true)}
       />
 
-      {/* Network Reconnecting Alert Banner */}
+      {/* Network Reconnecting Banner */}
       {connectionStatus === 'reconnecting' && (
         <View style={styles.reconnectBanner}>
           <RefreshCw size={ICON_SIZES.sm} color={COLORS.white} />
@@ -284,9 +244,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         onAddStroke={addStroke}
         onRemoveStroke={removeStroke}
         onClearAll={clearCanvas}
-        userId={currentUser?.id || 'anon'}
-        userName={currentUser?.fullName || 'Học Sinh'}
-        isTeacher={isTeacher || false}
+        userId={currentUser.id}
+        userName={currentUser.fullName}
+        isTeacher={isTeacher}
         canDraw={canCurrentUserDraw}
         onToggleStudentDraw={(stdId, curr) => updateStudentPermission(stdId, !curr)}
       />
@@ -299,7 +259,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         onToggleCam={handleToggleCam}
         isScreenSharing={isScreenSharing}
         onToggleScreenShare={handleToggleScreenShare}
-        isTeacher={isTeacher || false}
+        isTeacher={isTeacher}
         globalCanDraw={permissionState.globalCanDraw}
         onToggleGlobalDraw={() => setGlobalCanDraw(!permissionState.globalCanDraw)}
         onCopyRoomLink={handleCopyRoomLink}
@@ -308,28 +268,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         copiedSuccess={copiedLinkSuccess}
       />
 
-      {/* Mandatory JoinRoomNameModal for Anonymous visitors */}
-      <Modal
-        visible={joinModalVisible}
-        onClose={() => {}}
-        title="Em Hãy Nhập Tên Của Mình Để Vào Lớp Ché"
-        icon={UserCheck}
-        confirmLabel="Vào Lớp Ngay"
-        confirmVariant="success"
-        onConfirm={handleAnonymousJoin}
-      >
-        <TextInput
-          style={styles.nameInput}
-          placeholder="Nhập họ tên của em (VD: Lê Văn Nam)..."
-          placeholderTextColor={COLORS.gray400}
-          value={inputStudentName}
-          onChangeText={setInputStudentName}
-          autoFocus
-          onSubmitEditing={handleAnonymousJoin}
-        />
-      </Modal>
-
-      {/* Version 3.1: Teacher End Classroom Confirmation Modal */}
+      {/* Teacher End Classroom Confirmation Modal */}
       <Modal
         visible={endClassModalVisible}
         onClose={() => setEndClassModalVisible(false)}
@@ -342,7 +281,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         cancelLabel="Hủy"
       />
 
-      {/* Version 3.1: Student Kick-out Notice Modal when Teacher Ends Classroom */}
+      {/* Student Kick-out Notice Modal when Teacher Ends Classroom */}
       <Modal
         visible={endedByTeacherNoticeVisible}
         onClose={onLeaveRoom}
@@ -398,16 +337,5 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '800',
     fontSize: 14,
-  },
-  nameInput: {
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textDark,
-    marginVertical: 12,
   },
 });

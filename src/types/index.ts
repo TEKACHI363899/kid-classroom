@@ -14,6 +14,13 @@ export interface UserProfile {
   createdAt?: string;
 }
 
+export interface AuthSession {
+  token: string;
+  userRole: UserRole;
+  profile: UserProfile;
+  createdAt: string;
+}
+
 export interface TeacherAccount {
   id: string;
   fullName: string;

@@ -8,7 +8,11 @@ import { StudentDashboard } from './screens/StudentDashboard';
 import { MeetingRoom } from './screens/MeetingRoom';
 import { Header } from './components/common/Header';
 import { Modal } from './components/common/Modal';
-import { getClassroomByCode } from './services/storageService';
+import {
+  getStoredAuthSession,
+  clearAuthSession,
+  getClassroomByCode,
+} from './services/storageService';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -16,30 +20,17 @@ export const App: React.FC = () => {
   const [activeRoomTitle, setActiveRoomTitle] = useState<string>('Lớp Học Trực Tuyến Tương Tác');
   const [endedRoomNoticeVisible, setEndedRoomNoticeVisible] = useState<boolean>(false);
 
-  // Version 3.1: Routing & Distinction of 2 Link Types
+  // Version 5.0: App Launch Hook - Persistent Auto-Login & Dual Join Direct Link Auto-Detect
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const pathname = window.location.pathname;
-      const params = new URLSearchParams(window.location.search);
-      const studentCode = params.get('student_code') || params.get('code');
-      const urlName = params.get('name');
+      const storedSession = getStoredAuthSession();
 
-      // Link Type 1: Student Account Login Link (?student_code=HS123 or ?name=HocSinhAn on /login or /)
-      if (studentCode || (urlName && !pathname.includes('/join/') && !pathname.includes('/room/'))) {
-        const studentUser: UserProfile = {
-          id: `std-${studentCode || Date.now()}`,
-          fullName: urlName || 'Học Sinh',
-          role: 'student',
-        };
-        setCurrentUser(studentUser);
-        setActiveRoomCode(null); // Never auto-open meeting room! Opens StudentDashboard.
-        return;
-      }
-
-      // Link Type 2: Direct Classroom Join Link (/join/:roomCode or /room/:roomCode)
+      // Check for Direct Link Join (/join/:roomCode or /room/:roomCode)
       if (pathname.includes('/room/') || pathname.includes('/join/')) {
         const parts = pathname.split('/');
         const code = parts[parts.length - 1];
+
         if (code) {
           const roomObj = getClassroomByCode(code);
           if (roomObj && roomObj.status === 'ended') {
@@ -47,33 +38,46 @@ export const App: React.FC = () => {
             return;
           }
 
-          setActiveRoomCode(code);
-          if (roomObj?.title) {
-            setActiveRoomTitle(roomObj.title);
-          }
-
-          const sessName = sessionStorage.getItem(`student_name_${code}`) || urlName;
-          const sessId = sessionStorage.getItem(`student_id_${code}`);
-
-          if (sessName) {
-            const finalId = sessId || `std-${Date.now()}`;
-            sessionStorage.setItem(`student_name_${code}`, sessName);
-            sessionStorage.setItem(`student_id_${code}`, finalId);
-            setCurrentUser({
-              id: finalId,
-              fullName: sessName,
-              role: 'student',
-            });
+          if (storedSession) {
+            // Case A: Already logged in -> Auto-enter Meeting Room immediately
+            setCurrentUser(storedSession.profile);
+            setActiveRoomCode(code);
+            if (roomObj?.title) setActiveRoomTitle(roomObj.title);
           } else {
-            setCurrentUser(null);
+            // Case B: Not logged in -> Save redirect_room_code and open Login Screen
+            sessionStorage.setItem('redirect_room_code', code);
+            if (roomObj?.title) {
+              sessionStorage.setItem('redirect_room_title', roomObj.title);
+            }
           }
+          return;
         }
+      }
+
+      // Default persistent auto-login check
+      if (storedSession) {
+        setCurrentUser(storedSession.profile);
       }
     }
   }, []);
 
   const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
+
+    // Version 5.0: Post-Login Direct Link Redirect Check
+    if (typeof window !== 'undefined') {
+      const redirectCode = sessionStorage.getItem('redirect_room_code');
+      const redirectTitle = sessionStorage.getItem('redirect_room_title');
+
+      if (redirectCode) {
+        sessionStorage.removeItem('redirect_room_code');
+        sessionStorage.removeItem('redirect_room_title');
+        setActiveRoomCode(redirectCode);
+        if (redirectTitle) setActiveRoomTitle(redirectTitle);
+        return;
+      }
+    }
+
     setActiveRoomCode(null);
   };
 
@@ -92,10 +96,12 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    clearAuthSession();
     setCurrentUser(null);
     setActiveRoomCode(null);
   };
 
+  // Render 1: Inside Active Meeting Room
   if (activeRoomCode) {
     return (
       <MeetingRoom
@@ -107,6 +113,7 @@ export const App: React.FC = () => {
     );
   }
 
+  // Render 2: Teacher Dashboard (Post-Login)
   if (currentUser && currentUser.role === 'teacher') {
     return (
       <View style={styles.appWrapper}>
@@ -116,6 +123,7 @@ export const App: React.FC = () => {
     );
   }
 
+  // Render 3: Student Dashboard (Post-Login / Auto-Logged-In)
   if (currentUser && currentUser.role === 'student') {
     return (
       <View style={styles.appWrapper}>
@@ -135,6 +143,7 @@ export const App: React.FC = () => {
     );
   }
 
+  // Render 4: Login Screen
   return (
     <>
       <HomeScreen onLogin={handleLogin} />

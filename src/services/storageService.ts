@@ -4,6 +4,7 @@ import type {
   Classroom,
   AuthResponse,
   UserProfile,
+  AuthSession,
   ClassroomStatus,
 } from '../types';
 
@@ -11,10 +12,47 @@ const STORAGE_KEYS = {
   TEACHERS: 'kid_classroom_teachers',
   STUDENTS: 'kid_classroom_students',
   CLASSROOMS: 'kid_classroom_rooms',
+  AUTH_SESSION: 'student_auth_session',
 };
 
 const isWindowAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+};
+
+// Version 5.0: Persistent Auth Session Management
+export const saveAuthSession = (user: UserProfile): void => {
+  if (!isWindowAvailable()) return;
+  try {
+    const session: AuthSession = {
+      token: `token-${user.id}-${Date.now()}`,
+      userRole: user.role,
+      profile: user,
+      createdAt: new Date().toISOString(),
+    };
+    localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify(session));
+  } catch (error) {
+    console.error('Failed to save auth session:', error);
+  }
+};
+
+export const getStoredAuthSession = (): AuthSession | null => {
+  if (!isWindowAvailable()) return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.error('Failed to read auth session:', error);
+    return null;
+  }
+};
+
+export const clearAuthSession = (): void => {
+  if (!isWindowAvailable()) return;
+  try {
+    localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+  } catch (error) {
+    console.error('Failed to clear auth session:', error);
+  }
 };
 
 const DEFAULT_CLASSROOMS: Classroom[] = [
@@ -110,6 +148,8 @@ export const registerTeacher = (fullName: string, email: string, password: strin
     createdAt: newTeacher.createdAt,
   };
 
+  saveAuthSession(userProfile);
+
   return {
     success: true,
     message: 'Tạo tài khoản thành công! Hệ thống đang chuyển về Dashboard...',
@@ -142,6 +182,8 @@ export const loginTeacher = (email: string, password: string): AuthResponse => {
     createdAt: teacher.createdAt,
   };
 
+  saveAuthSession(userProfile);
+
   return {
     success: true,
     message: 'Đăng nhập thành công!',
@@ -149,7 +191,6 @@ export const loginTeacher = (email: string, password: string): AuthResponse => {
   };
 };
 
-// Version 4.0: Student Username & Password Authentication
 export const getTeacherStudents = (teacherId?: string): StudentAccount[] => {
   if (!isWindowAvailable()) return DEFAULT_STUDENTS;
   try {
@@ -236,6 +277,8 @@ export const loginStudent = (username: string, passwordText: string): AuthRespon
     username: student.username,
     role: 'student',
   };
+
+  saveAuthSession(userProfile);
 
   return {
     success: true,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { User, ShieldCheck, LogIn, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
+import { User, ShieldCheck, LogIn, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle, CheckSquare, Square } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserRole, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
@@ -14,14 +14,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
   const [roomCode, setRoomCode] = useState<string>('MATH101');
 
-  // Version 4.0: Student Username & Password State
+  // Student Credentials State
   const [studentUsername, setStudentUsername] = useState<string>('hocsinhan');
   const [studentPassword, setStudentPassword] = useState<string>('123456');
+  const [rememberMe, setRememberMe] = useState<boolean>(true);
 
   // Teacher Auth Mode State: 'login' | 'register'
   const [teacherAuthMode, setTeacherAuthMode] = useState<'login' | 'register'>('login');
 
-  // Teacher Login Form State
+  // Teacher Form State
   const [loginEmail, setLoginEmail] = useState<string>('teacher@kidclass.edu.vn');
   const [loginPassword, setLoginPassword] = useState<string>('123456');
 
@@ -45,7 +46,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
     }
   }, []);
 
-  // Version 4.0: Student Login via Username & Password
   const handleStudentLoginSubmit = () => {
     setAuthError(null);
     setAuthSuccess(null);
@@ -175,7 +175,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
 
         {/* Form Body */}
         {selectedRole === 'student' ? (
-          /* Version 4.0: Student Credentials Login Form */
           <View style={styles.formContent}>
             <Text style={styles.inputLabel}>Tên Đăng Nhập (Username)</Text>
             <TextInput
@@ -199,6 +198,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
               onSubmitEditing={handleStudentLoginSubmit}
             />
 
+            {/* Version 5.0: Checkbox Ghi nhớ tài khoản tự động */}
+            <TouchableOpacity
+              onPress={() => setRememberMe(!rememberMe)}
+              style={styles.checkboxRow}
+            >
+              {rememberMe ? (
+                <CheckSquare size={20} color={COLORS.primary} />
+              ) : (
+                <Square size={20} color={COLORS.gray400} />
+              )}
+              <Text style={styles.checkboxText}>Ghi nhớ đăng nhập tự động trên thiết bị này</Text>
+            </TouchableOpacity>
+
             <Button
               label="Đăng Nhập Về Dashboard"
               icon={LogIn}
@@ -209,7 +221,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           </View>
         ) : (
           <View style={styles.formContent}>
-            {/* Sub Mode Selector for Teacher: Login vs Register */}
+            {/* Sub Mode Selector for Teacher */}
             <View style={styles.subAuthToggle}>
               <TouchableOpacity
                 onPress={() => {
@@ -456,8 +468,20 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  checkboxText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.gray600,
+  },
   submitBtn: {
-    marginTop: 16,
+    marginTop: 12,
   },
   errorBox: {
     flexDirection: 'row',

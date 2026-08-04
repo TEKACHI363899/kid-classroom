@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Video, Calendar, Sparkles, Smile } from 'lucide-react';
-import { COLORS, ICON_SIZES, MOCK_CLASSROOMS_LIST } from '../constants';
-import type { UserProfile } from '../types';
+import { Video, Calendar, Sparkles, Smile, BookOpen } from 'lucide-react';
+import { COLORS, ICON_SIZES } from '../constants';
+import type { UserProfile, Classroom } from '../types';
 import { Button } from '../components/common/Button';
+import { getTeacherClassrooms } from '../services/storageService';
 
 export interface StudentDashboardProps {
   user: UserProfile;
@@ -11,6 +12,15 @@ export interface StudentDashboardProps {
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoinRoom }) => {
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+
+  useEffect(() => {
+    const loadedRooms = getTeacherClassrooms();
+    setClassrooms(loadedRooms);
+  }, []);
+
+  const activeClassroom = classrooms.find((c) => c.isActive) || classrooms[0];
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.contentWrapper}>
@@ -22,68 +32,80 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoin
           <View style={styles.welcomeTextGroup}>
             <Text style={styles.welcomeTitle}>Chào mừng em, {user.fullName}!</Text>
             <Text style={styles.welcomeSub}>
-              Hôm nay em có bài học thú vị đang chờ đó. Hãy bấm nút dưới đây để vào lớp ngay nhé!
+              Hôm nay em có bài học thú vị đang chờ đó. Hãy chọn lớp bên dưới để bắt đầu học nhé!
             </Text>
           </View>
         </View>
 
-        {/* Featured Immediate Join Card */}
-        <View style={styles.featuredCard}>
-          <View style={styles.featuredTag}>
-            <Sparkles size={ICON_SIZES.sm} color={COLORS.white} />
-            <Text style={styles.featuredTagText}>LỚP ĐANG DIỄN RA</Text>
+        {/* Featured Immediate Join Card if active classroom exists */}
+        {activeClassroom ? (
+          <View style={styles.featuredCard}>
+            <View style={styles.featuredTag}>
+              <Sparkles size={ICON_SIZES.sm} color={COLORS.white} />
+              <Text style={styles.featuredTagText}>LỚP HỌC KHUYẾN NGHỊ</Text>
+            </View>
+
+            <Text style={styles.featuredTitle}>{activeClassroom.title}</Text>
+            <Text style={styles.featuredTeacher}>Mã Phòng Học: {activeClassroom.roomCode}</Text>
+
+            <Button
+              label="VÀO LỚP NGAY TẠI ĐÂY"
+              icon={Video}
+              variant="success"
+              size="lg"
+              onPress={() => onJoinRoom(activeClassroom.roomCode, activeClassroom.title)}
+              style={styles.joinBtn}
+            />
           </View>
-
-          <Text style={styles.featuredTitle}>Toán Tư Duy - Hình Học Cơ Bản</Text>
-          <Text style={styles.featuredTeacher}>Giáo viên: Cô Nông Thị Tuyết</Text>
-
-          <Button
-            label="VÀO LỚP NGAY TẠI ĐÂY"
-            icon={Video}
-            variant="success"
-            size="lg"
-            onPress={() => onJoinRoom('MATH101', 'Toán Tư Duy - Hình Học Cơ Bản')}
-            style={styles.joinBtn}
-          />
-        </View>
+        ) : (
+          <View style={styles.emptyFeaturedCard}>
+            <View style={styles.emptyIconBadge}>
+              <BookOpen size={ICON_SIZES.xl} color={COLORS.primary} />
+            </View>
+            <Text style={styles.emptyFeaturedTitle}>Chưa có lớp học nào khả dụng</Text>
+            <Text style={styles.emptyFeaturedSub}>
+              Vui lòng nhập Mã Phòng Học từ thầy cô giáo ở màn hình chính hoặc chờ thầy cô mở lớp nhé!
+            </Text>
+          </View>
+        )}
 
         {/* Upcoming Classes List */}
         <View style={styles.sectionHeader}>
           <Calendar size={ICON_SIZES.lg} color={COLORS.primary} />
-          <Text style={styles.sectionTitle}>Danh Sách Lịch Học Của Em</Text>
+          <Text style={styles.sectionTitle}>Danh Sách Lịch Học ({classrooms.length})</Text>
         </View>
 
-        <View style={styles.classList}>
-          {MOCK_CLASSROOMS_LIST.map((cls) => (
-            <View key={cls.id} style={styles.classCard}>
-              <View style={styles.classCardHeader}>
-                <View style={styles.classBadge}>
-                  <BookOpenIcon />
+        {classrooms.length === 0 ? (
+          <View style={styles.emptyListCard}>
+            <Text style={styles.emptyListText}>Hiện chưa có danh sách lớp học nào được đăng tải.</Text>
+          </View>
+        ) : (
+          <View style={styles.classList}>
+            {classrooms.map((cls) => (
+              <View key={cls.id} style={styles.classCard}>
+                <View style={styles.classCardHeader}>
+                  <View style={styles.classBadge}>
+                    <Sparkles size={ICON_SIZES.md} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.classDetails}>
+                    <Text style={styles.classTitle}>{cls.title}</Text>
+                    <Text style={styles.classCode}>Mã Phòng: {cls.roomCode}</Text>
+                  </View>
                 </View>
-                <View style={styles.classDetails}>
-                  <Text style={styles.classTitle}>{cls.title}</Text>
-                  <Text style={styles.classCode}>Mã Phòng: {cls.roomCode}</Text>
-                </View>
+                <Button
+                  label="Tham Gia Lớp"
+                  icon={Video}
+                  variant={cls.isActive ? 'success' : 'primary'}
+                  onPress={() => onJoinRoom(cls.roomCode, cls.title)}
+                />
               </View>
-              <Button
-                label="Tham Gia Lớp"
-                icon={Video}
-                variant={cls.isActive ? 'success' : 'primary'}
-                onPress={() => onJoinRoom(cls.roomCode, cls.title)}
-              />
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
       </View>
     </ScrollView>
   );
 };
-
-const BookOpenIcon = () => (
-  <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
-    <Sparkles size={ICON_SIZES.md} color={COLORS.primary} />
-  </View>
-);
 
 const styles = StyleSheet.create({
   container: {
@@ -181,6 +203,42 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
   },
+  emptyFeaturedCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 28,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.gray200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  emptyIconBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyFeaturedTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: COLORS.textDark,
+    marginBottom: 6,
+  },
+  emptyFeaturedSub: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.gray600,
+    textAlign: 'center',
+    maxWidth: 480,
+    lineHeight: 20,
+  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -191,6 +249,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: COLORS.textDark,
+  },
+  emptyListCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyListText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.gray600,
   },
   classList: {
     gap: 14,
@@ -218,6 +287,10 @@ const styles = StyleSheet.create({
     minWidth: 240,
   },
   classBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -236,3 +309,5 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 });
+
+export default StudentDashboard;

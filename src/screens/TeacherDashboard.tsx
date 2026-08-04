@@ -1,32 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
-import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus } from 'lucide-react';
-import { COLORS, ICON_SIZES, MOCK_STUDENTS_LIST, MOCK_CLASSROOMS_LIST } from '../constants';
-import type { TeacherStudent, Classroom } from '../types';
+import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus, Trash2, FolderOpen } from 'lucide-react';
+import { COLORS, ICON_SIZES } from '../constants';
+import type { TeacherStudent, Classroom, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import {
+  getTeacherStudents,
+  saveTeacherStudent,
+  deleteTeacherStudent,
+  getTeacherClassrooms,
+  saveTeacherClassroom,
+  deleteTeacherClassroom,
+} from '../services/storageService';
 
 export interface TeacherDashboardProps {
+  user: UserProfile;
   onStartRoom: (roomCode: string, title: string) => void;
 }
 
-export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom }) => {
-  const [students, setStudents] = useState<TeacherStudent[]>(MOCK_STUDENTS_LIST.map(s => ({
-    id: s.id,
-    teacherId: 'tch-101',
-    studentName: s.name,
-    accessCode: s.accessCode,
-  })));
-
-  const [classrooms, setClassrooms] = useState<Classroom[]>(MOCK_CLASSROOMS_LIST.map(c => ({
-    id: c.id,
-    title: c.title,
-    teacherId: c.teacherId,
-    scheduledStart: c.scheduledStart,
-    scheduledEnd: c.scheduledEnd,
-    roomCode: c.roomCode,
-    isActive: c.isActive,
-  })));
+export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStartRoom }) => {
+  const [students, setStudents] = useState<TeacherStudent[]>([]);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
 
   // Add Student Modal
   const [addStudentVisible, setAddStudentVisible] = useState<boolean>(false);
@@ -38,18 +33,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (user && user.id) {
+      const loadedStudents = getTeacherStudents(user.id);
+      const loadedRooms = getTeacherClassrooms(user.id);
+      setStudents(loadedStudents);
+      setClassrooms(loadedRooms);
+    }
+  }, [user]);
+
   const handleAddStudent = () => {
     if (!newStudentName.trim()) return;
     const accessCode = `STD${Math.floor(1000 + Math.random() * 9000)}`;
     const newStudent: TeacherStudent = {
       id: `std-${Date.now()}`,
-      teacherId: 'tch-101',
+      teacherId: user.id,
       studentName: newStudentName.trim(),
       accessCode,
+      createdAt: new Date().toISOString(),
     };
-    setStudents((prev) => [newStudent, ...prev]);
+    const updated = saveTeacherStudent(newStudent);
+    setStudents(updated.filter((s) => s.teacherId === user.id));
     setNewStudentName('');
     setAddStudentVisible(false);
+  };
+
+  const handleDeleteStudentItem = (studentId: string) => {
+    const updated = deleteTeacherStudent(studentId, user.id);
+    setStudents(updated);
   };
 
   const handleAddSchedule = () => {
@@ -58,15 +69,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
     const newClassroom: Classroom = {
       id: `cls-${Date.now()}`,
       title: newTitle.trim(),
-      teacherId: 'tch-101',
+      teacherId: user.id,
       scheduledStart: new Date().toISOString(),
       scheduledEnd: new Date(Date.now() + 3600000).toISOString(),
       roomCode,
       isActive: true,
+      createdAt: new Date().toISOString(),
     };
-    setClassrooms((prev) => [newClassroom, ...prev]);
+    const updated = saveTeacherClassroom(newClassroom);
+    setClassrooms(updated.filter((r) => r.teacherId === user.id));
     setNewTitle('');
     setAddScheduleVisible(false);
+  };
+
+  const handleDeleteClassroomItem = (classroomId: string) => {
+    const updated = deleteTeacherClassroom(classroomId, user.id);
+    setClassrooms(updated);
   };
 
   const copyParentLink = (std: TeacherStudent) => {
@@ -84,14 +102,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
         {/* Header Hero Section */}
         <View style={styles.heroBanner}>
           <View style={styles.heroTextGroup}>
-            <Text style={styles.heroTitle}>Bảng Quản Lý Lớp Học Của Cô</Text>
+            <Text style={styles.heroTitle}>Bảng Quản Lý Lớp Học Của {user.fullName}</Text>
             <Text style={styles.heroSub}>Tạo danh sách học sinh, lên lịch buổi dạy và mở lớp 1-Click</Text>
           </View>
           <Button
             label="Mở Phòng Học Ngay"
             icon={Video}
             variant="success"
-            onPress={() => onStartRoom('ROOM101', 'Lớp Học Tương Tác Trực Tiếp')}
+            onPress={() => onStartRoom(`ROOM${Math.floor(100 + Math.random() * 900)}`, `Lớp Trực Tiếp của ${user.fullName}`)}
           />
         </View>
 
@@ -110,35 +128,54 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
           />
         </View>
 
-        <View style={styles.studentCardsGrid}>
-          {students.map((std) => (
-            <View key={std.id} style={styles.studentCard}>
-              <View style={styles.studentCardHeader}>
-                <View style={styles.studentAvatar}>
-                  <Sparkles size={ICON_SIZES.md} color={COLORS.primary} />
-                </View>
-                <View style={styles.studentDetails}>
-                  <Text style={styles.studentName}>{std.studentName}</Text>
-                  <Text style={styles.accessCode}>Mã: {std.accessCode}</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => copyParentLink(std)}
-                style={[styles.copyLinkBtn, copiedId === std.id && styles.copyLinkBtnSuccess]}
-              >
-                {copiedId === std.id ? (
-                  <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
-                ) : (
-                  <Copy size={ICON_SIZES.sm} color={COLORS.primary} />
-                )}
-                <Text style={[styles.copyLinkText, copiedId === std.id && { color: COLORS.success }]}>
-                  {copiedId === std.id ? 'Đã Sao Chép!' : 'Sao Chép Link Phụ Huynh'}
-                </Text>
-              </TouchableOpacity>
+        {students.length === 0 ? (
+          <View style={styles.emptyStateCard}>
+            <View style={styles.emptyIconBadge}>
+              <UserPlus size={ICON_SIZES.xl} color={COLORS.primary} />
             </View>
-          ))}
-        </View>
+            <Text style={styles.emptyStateTitle}>Chưa có học sinh nào</Text>
+            <Text style={styles.emptyStateSub}>
+              Nhấn nút "Thêm Học Sinh" ở trên để khởi tạo tài khoản và lấy link gửi cho phụ huynh.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.studentCardsGrid}>
+            {students.map((std) => (
+              <View key={std.id} style={styles.studentCard}>
+                <View style={styles.studentCardHeader}>
+                  <View style={styles.studentAvatar}>
+                    <Sparkles size={ICON_SIZES.md} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.studentDetails}>
+                    <Text style={styles.studentName}>{std.studentName}</Text>
+                    <Text style={styles.accessCode}>Mã: {std.accessCode}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteStudentItem(std.id)}
+                    style={styles.deleteBtn}
+                    title="Xóa học sinh"
+                  >
+                    <Trash2 size={ICON_SIZES.sm} color={COLORS.danger} />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => copyParentLink(std)}
+                  style={[styles.copyLinkBtn, copiedId === std.id && styles.copyLinkBtnSuccess]}
+                >
+                  {copiedId === std.id ? (
+                    <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
+                  ) : (
+                    <Copy size={ICON_SIZES.sm} color={COLORS.primary} />
+                  )}
+                  <Text style={[styles.copyLinkText, copiedId === std.id && { color: COLORS.success }]}>
+                    {copiedId === std.id ? 'Đã Sao Chép!' : 'Sao Chép Link Phụ Huynh'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Section 2: Classroom Schedule Management */}
         <View style={[styles.sectionHeader, { marginTop: 36 }]}>
@@ -155,25 +192,45 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
           />
         </View>
 
-        <View style={styles.classroomList}>
-          {classrooms.map((cls) => (
-            <View key={cls.id} style={styles.classroomCard}>
-              <View style={styles.clsInfo}>
-                <Text style={styles.clsTitle}>{cls.title}</Text>
-                <Text style={styles.clsTime}>
-                  Mã Lớp: {cls.roomCode} | Trạng Thái: {cls.isActive ? 'Đang Mở' : 'Chưa Mở'}
-                </Text>
-              </View>
-              <Button
-                label="Vào Lớp"
-                icon={Video}
-                variant={cls.isActive ? 'success' : 'outline'}
-                size="sm"
-                onPress={() => onStartRoom(cls.roomCode, cls.title)}
-              />
+        {classrooms.length === 0 ? (
+          <View style={styles.emptyStateCard}>
+            <View style={[styles.emptyIconBadge, { backgroundColor: '#F3E8FF' }]}>
+              <FolderOpen size={ICON_SIZES.xl} color={COLORS.purple} />
             </View>
-          ))}
-        </View>
+            <Text style={styles.emptyStateTitle}>Chưa có lịch dạy nào</Text>
+            <Text style={styles.emptyStateSub}>
+              Hãy nhấn nút "Tạo Lịch Học Mới" để lên lịch bài học và tạo mã phòng dạy trực tuyến!
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.classroomList}>
+            {classrooms.map((cls) => (
+              <View key={cls.id} style={styles.classroomCard}>
+                <View style={styles.clsInfo}>
+                  <Text style={styles.clsTitle}>{cls.title}</Text>
+                  <Text style={styles.clsTime}>
+                    Mã Lớp: {cls.roomCode} | Trạng Thái: {cls.isActive ? 'Đang Mở' : 'Chưa Mở'}
+                  </Text>
+                </View>
+                <View style={styles.clsActions}>
+                  <Button
+                    label="Vào Lớp"
+                    icon={Video}
+                    variant={cls.isActive ? 'success' : 'outline'}
+                    size="sm"
+                    onPress={() => onStartRoom(cls.roomCode, cls.title)}
+                  />
+                  <TouchableOpacity
+                    onPress={() => handleDeleteClassroomItem(cls.id)}
+                    style={styles.deleteBtn}
+                  >
+                    <Trash2 size={ICON_SIZES.sm} color={COLORS.danger} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* Modal Add Student */}
@@ -209,7 +266,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
       >
         <TextInput
           style={styles.modalInput}
-          placeholder="Nhập tên bài dạy (VD: Toán Tư Duy Bài 3)..."
+          placeholder="Nhập tên bài dạy (VD: Toán Tư Duy Bài 1)..."
           placeholderTextColor={COLORS.gray400}
           value={newTitle}
           onChangeText={setNewTitle}
@@ -277,6 +334,41 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: COLORS.textDark,
   },
+  emptyStateCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  emptyIconBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 6,
+  },
+  emptyStateSub: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.gray600,
+    textAlign: 'center',
+    maxWidth: 440,
+    lineHeight: 20,
+  },
   studentCardsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -321,6 +413,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.primary,
+  },
+  deleteBtn: {
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: '#FEF2F2',
   },
   copyLinkBtn: {
     flexDirection: 'row',
@@ -375,6 +472,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.gray600,
   },
+  clsActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   modalInput: {
     borderWidth: 2,
     borderColor: COLORS.primary,
@@ -385,3 +487,5 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
   },
 });
+
+export default TeacherDashboard;

@@ -69,31 +69,3 @@ export const WEBRTC_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   noiseSuppression: true,
   autoGainControl: true,
 };
-
-export const MOCK_STUDENTS_LIST = [
-  { id: 'std-101', name: 'Học Sinh An', accessCode: 'AN2026' },
-  { id: 'std-102', name: 'Học Sinh Bình', accessCode: 'BINH2026' },
-  { id: 'std-103', name: 'Học Sinh Chi', accessCode: 'CHI2026' },
-  { id: 'std-104', name: 'Học Sinh Dung', accessCode: 'DUNG2026' },
-];
-
-export const MOCK_CLASSROOMS_LIST = [
-  {
-    id: 'cls-001',
-    title: 'Bài 1: Toán Tư Duy - Hình Học Cơ Bản',
-    teacherId: 'tch-001',
-    scheduledStart: '2026-08-04T15:00:00Z',
-    scheduledEnd: '2026-08-04T16:00:00Z',
-    roomCode: 'MATH101',
-    isActive: true,
-  },
-  {
-    id: 'cls-002',
-    title: 'Bài 2: Tiếng Anh Giao Tiếp Trẻ Em',
-    teacherId: 'tch-001',
-    scheduledStart: '2026-08-05T09:00:00Z',
-    scheduledEnd: '2026-08-05T10:00:00Z',
-    roomCode: 'ENG202',
-    isActive: false,
-  },
-];

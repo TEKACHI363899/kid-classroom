@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { User, ShieldCheck, ArrowRight, BookOpen, Sparkles, KeyRound } from 'lucide-react';
-import { COLORS, ICON_SIZES, MOCK_STUDENTS_LIST } from '../constants';
+import { User, ShieldCheck, ArrowRight, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { COLORS, ICON_SIZES } from '../constants';
 import type { UserRole, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
+import { loginTeacher, registerTeacher } from '../services/storageService';
 
 export interface HomeScreenProps {
   onLogin: (user: UserProfile, roomCode?: string) => void;
@@ -11,9 +12,21 @@ export interface HomeScreenProps {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
+
+  // Student state
   const [studentName, setStudentName] = useState<string>('');
-  const [roomCode, setRoomCode] = useState<string>('MATH101');
-  const [teacherEmail, setTeacherEmail] = useState<string>('teacher@kidclass.edu.vn');
+  const [roomCode, setRoomCode] = useState<string>('');
+
+  // Teacher Auth State
+  const [isRegistering, setIsRegistering] = useState<boolean>(false);
+  const [teacherName, setTeacherName] = useState<string>('');
+  const [teacherEmail, setTeacherEmail] = useState<string>('');
+  const [teacherPassword, setTeacherPassword] = useState<string>('');
+  const [teacherConfirmPassword, setTeacherConfirmPassword] = useState<string>('');
+
+  // Notification state
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -29,23 +42,78 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
     }
   }, []);
 
-  const handleStudentJoin = (nameToUse?: string) => {
-    const finalName = (nameToUse || studentName).trim() || 'Học Sinh Thân Yêu';
+  const handleStudentJoin = () => {
+    setErrorMessage('');
+    const finalName = studentName.trim();
+    if (!finalName) {
+      setErrorMessage('Vui lòng nhập tên học sinh của bạn.');
+      return;
+    }
     const user: UserProfile = {
       id: `std-${Date.now()}`,
       fullName: finalName,
       role: 'student',
     };
-    onLogin(user, roomCode);
+    onLogin(user, roomCode.trim());
   };
 
-  const handleTeacherJoin = () => {
-    const user: UserProfile = {
-      id: `tch-101`,
-      fullName: 'Cô Nông Thị Tuyết',
-      role: 'teacher',
-    };
-    onLogin(user, roomCode);
+  const handleTeacherAuth = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (isRegistering) {
+      if (!teacherName.trim()) {
+        setErrorMessage('Vui lòng nhập họ và tên của giáo viên.');
+        return;
+      }
+      if (!teacherEmail.trim()) {
+        setErrorMessage('Vui lòng nhập địa chỉ email.');
+        return;
+      }
+      if (!teacherPassword.trim()) {
+        setErrorMessage('Vui lòng nhập mật khẩu.');
+        return;
+      }
+      if (teacherPassword !== teacherConfirmPassword) {
+        setErrorMessage('Mật khẩu xác nhận không khớp.');
+        return;
+      }
+
+      const res = registerTeacher(teacherName, teacherEmail, teacherPassword);
+      if (!res.success) {
+        setErrorMessage(res.message || 'Đăng ký thất bại.');
+        return;
+      }
+
+      setSuccessMessage(res.message || 'Tạo tài khoản thành công!');
+      if (res.user) {
+        setTimeout(() => {
+          onLogin(res.user!);
+        }, 1000);
+      }
+    } else {
+      if (!teacherEmail.trim()) {
+        setErrorMessage('Vui lòng nhập địa chỉ email.');
+        return;
+      }
+      if (!teacherPassword.trim()) {
+        setErrorMessage('Vui lòng nhập mật khẩu.');
+        return;
+      }
+
+      const res = loginTeacher(teacherEmail, teacherPassword);
+      if (!res.success) {
+        setErrorMessage(res.message || 'Đăng nhập thất bại.');
+        return;
+      }
+
+      setSuccessMessage(res.message || 'Đăng nhập thành công!');
+      if (res.user) {
+        setTimeout(() => {
+          onLogin(res.user!);
+        }, 600);
+      }
+    }
   };
 
   return (
@@ -63,17 +131,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
         {/* Role Toggle Selector */}
         <View style={styles.roleToggleRow}>
           <TouchableOpacity
-            onPress={() => setSelectedRole('student')}
+            onPress={() => {
+              setSelectedRole('student');
+              setErrorMessage('');
+              setSuccessMessage('');
+            }}
             style={[styles.roleTab, selectedRole === 'student' && styles.roleTabActiveStudent]}
           >
             <User size={ICON_SIZES.md} color={selectedRole === 'student' ? COLORS.white : COLORS.primary} />
             <Text style={[styles.roleTabText, selectedRole === 'student' && styles.roleTabTextActive]}>
-              Học Sinh (Vào Lớp Ngay)
+              Học Sinh (Vào Lớp)
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setSelectedRole('teacher')}
+            onPress={() => {
+              setSelectedRole('teacher');
+              setErrorMessage('');
+              setSuccessMessage('');
+            }}
             style={[styles.roleTab, selectedRole === 'teacher' && styles.roleTabActiveTeacher]}
           >
             <ShieldCheck size={ICON_SIZES.md} color={selectedRole === 'teacher' ? COLORS.white : COLORS.purple} />
@@ -83,39 +159,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           </TouchableOpacity>
         </View>
 
+        {/* Error / Success Alerts */}
+        {Boolean(errorMessage) && (
+          <View style={styles.errorAlert}>
+            <AlertCircle size={ICON_SIZES.sm} color={COLORS.danger} />
+            <Text style={styles.errorAlertText}>{errorMessage}</Text>
+          </View>
+        )}
+
+        {Boolean(successMessage) && (
+          <View style={styles.successAlert}>
+            <CheckCircle2 size={ICON_SIZES.sm} color={COLORS.success} />
+            <Text style={styles.successAlertText}>{successMessage}</Text>
+          </View>
+        )}
+
         {/* Form Body */}
         {selectedRole === 'student' ? (
           <View style={styles.formContent}>
             <Text style={styles.inputLabel}>Tên Học Sinh của bạn</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập tên em (VD: Học Sinh An)..."
+              placeholder="Nhập tên em (VD: Nguyễn Văn An)..."
               placeholderTextColor={COLORS.gray400}
               value={studentName}
               onChangeText={setStudentName}
             />
 
-            <Text style={styles.inputLabel}>Hoặc Chọn Nhanh Tên Từ Danh Sách Lớp</Text>
-            <View style={styles.quickList}>
-              {MOCK_STUDENTS_LIST.map((s) => (
-                <TouchableOpacity
-                  key={s.id}
-                  onPress={() => {
-                    setStudentName(s.name);
-                    handleStudentJoin(s.name);
-                  }}
-                  style={styles.quickNameBadge}
-                >
-                  <Sparkles size={ICON_SIZES.sm} color={COLORS.primary} />
-                  <Text style={styles.quickNameText}>{s.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.inputLabel}>Mã Phòng Học</Text>
+            <Text style={styles.inputLabel}>Mã Phòng Học (Nêu có)</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập Mã Lớp (VD: MATH101)..."
+              placeholder="Nhập mã phòng học từ giáo viên..."
               placeholderTextColor={COLORS.gray400}
               value={roomCode}
               onChangeText={setRoomCode}
@@ -126,35 +200,94 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
               icon={ArrowRight}
               iconPosition="right"
               variant="success"
-              onPress={() => handleStudentJoin()}
+              onPress={handleStudentJoin}
               style={styles.submitBtn}
             />
           </View>
         ) : (
           <View style={styles.formContent}>
+            {/* Mode Switcher inside Teacher tab */}
+            <View style={styles.authModeSwitch}>
+              <TouchableOpacity
+                onPress={() => {
+                  setIsRegistering(false);
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
+                style={[styles.authModeBtn, !isRegistering && styles.authModeBtnActive]}
+              >
+                <Text style={[styles.authModeText, !isRegistering && styles.authModeTextActive]}>
+                  Đăng Nhập
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setIsRegistering(true);
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
+                style={[styles.authModeBtn, isRegistering && styles.authModeBtnActive]}
+              >
+                <Text style={[styles.authModeText, isRegistering && styles.authModeTextActive]}>
+                  Tạo Tài Khoản Mới
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {isRegistering && (
+              <>
+                <Text style={styles.inputLabel}>Họ và Tên Giáo Viên</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Nhập họ và tên (VD: Nguyễn Thị Hoa)..."
+                  placeholderTextColor={COLORS.gray400}
+                  value={teacherName}
+                  onChangeText={setTeacherName}
+                />
+              </>
+            )}
+
             <Text style={styles.inputLabel}>Email Giáo Viên</Text>
             <TextInput
               style={styles.textInput}
               placeholder="nhap.email@truonghoc.edu.vn"
               placeholderTextColor={COLORS.gray400}
+              keyboardType="email-address"
+              autoCapitalize="none"
               value={teacherEmail}
               onChangeText={setTeacherEmail}
             />
 
-            <Text style={styles.inputLabel}>Mật Khẩu / Mã OTP Auth</Text>
+            <Text style={styles.inputLabel}>Mật Khẩu</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="••••••••"
+              placeholder="Nhập mật khẩu..."
               placeholderTextColor={COLORS.gray400}
               secureTextEntry
-              value="123456"
+              value={teacherPassword}
+              onChangeText={setTeacherPassword}
             />
 
+            {isRegistering && (
+              <>
+                <Text style={styles.inputLabel}>Xác Nhận Mật Khẩu</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Nhập lại mật khẩu..."
+                  placeholderTextColor={COLORS.gray400}
+                  secureTextEntry
+                  value={teacherConfirmPassword}
+                  onChangeText={setTeacherConfirmPassword}
+                />
+              </>
+            )}
+
             <Button
-              label="Đăng Nhập Quản Lý Lớp"
-              icon={KeyRound}
+              label={isRegistering ? 'Đăng Ký Tài Khoản Giáo Viên' : 'Đăng Nhập Quản Lý Lớp'}
+              icon={isRegistering ? UserPlus : KeyRound}
               variant="secondary"
-              onPress={handleTeacherJoin}
+              onPress={handleTeacherAuth}
               style={styles.submitBtn}
             />
           </View>
@@ -241,6 +374,70 @@ const styles = StyleSheet.create({
   roleTabTextActive: {
     color: COLORS.white,
   },
+  authModeSwitch: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.gray100,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 16,
+  },
+  authModeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  authModeBtnActive: {
+    backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  authModeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.gray600,
+  },
+  authModeTextActive: {
+    color: COLORS.purple,
+    fontWeight: '900',
+  },
+  errorAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  errorAlertText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.danger,
+  },
+  successAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  successAlertText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.success,
+  },
   formContent: {
     gap: 12,
   },
@@ -261,29 +458,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  quickList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 8,
-  },
-  quickNameBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#BFDBFE',
-  },
-  quickNameText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
   submitBtn: {
     marginTop: 16,
   },
 });
+
+export default HomeScreen;

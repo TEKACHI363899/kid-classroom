@@ -8,6 +8,21 @@ export interface UserProfile {
   role: UserRole;
   avatarUrl?: string;
   createdAt?: string;
+  email?: string;
+}
+
+export interface TeacherAccount {
+  id: string;
+  fullName: string;
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message?: string;
+  user?: UserProfile;
 }
 
 export interface TeacherStudent {

@@ -1,4 +1,11 @@
-import type { TeacherAccount, TeacherStudent, Classroom, AuthResponse, UserProfile, ClassroomStatus } from '../types';
+import type {
+  TeacherAccount,
+  StudentAccount,
+  Classroom,
+  AuthResponse,
+  UserProfile,
+  ClassroomStatus,
+} from '../types';
 
 const STORAGE_KEYS = {
   TEACHERS: 'kid_classroom_teachers',
@@ -10,7 +17,6 @@ const isWindowAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 };
 
-// Initial default classrooms list if localStorage is empty
 const DEFAULT_CLASSROOMS: Classroom[] = [
   {
     id: 'cls-001',
@@ -31,6 +37,23 @@ const DEFAULT_CLASSROOMS: Classroom[] = [
     roomCode: 'ENG202',
     status: 'scheduled',
     isActive: false,
+  },
+];
+
+const DEFAULT_STUDENTS: StudentAccount[] = [
+  {
+    id: 'std-101',
+    teacherId: 'tch-101',
+    fullName: 'Nguyễn Văn An',
+    username: 'hocsinhan',
+    passwordText: '123456',
+  },
+  {
+    id: 'std-102',
+    teacherId: 'tch-101',
+    fullName: 'Trần Thị Bình',
+    username: 'hocsinhbinh',
+    passwordText: '123456',
   },
 ];
 
@@ -126,33 +149,102 @@ export const loginTeacher = (email: string, password: string): AuthResponse => {
   };
 };
 
-export const getTeacherStudents = (teacherId?: string): TeacherStudent[] => {
-  if (!isWindowAvailable()) return [];
+// Version 4.0: Student Username & Password Authentication
+export const getTeacherStudents = (teacherId?: string): StudentAccount[] => {
+  if (!isWindowAvailable()) return DEFAULT_STUDENTS;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-    const allStudents: TeacherStudent[] = raw ? JSON.parse(raw) : [];
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(DEFAULT_STUDENTS));
+      return DEFAULT_STUDENTS;
+    }
+    const allStudents: StudentAccount[] = JSON.parse(raw);
     if (!teacherId) return allStudents;
     return allStudents.filter((s) => s.teacherId === teacherId);
   } catch (error) {
     console.error('Error fetching students:', error);
-    return [];
+    return DEFAULT_STUDENTS;
   }
 };
 
-export const saveTeacherStudent = (student: TeacherStudent): TeacherStudent[] => {
+export const registerStudentAccount = (
+  teacherId: string,
+  fullName: string,
+  username: string,
+  passwordText: string
+): { success: boolean; message: string; student?: StudentAccount } => {
+  const cleanName = fullName.trim();
+  const cleanUsername = username.trim().toLowerCase();
+  const cleanPassword = passwordText.trim();
+
+  if (!cleanName || !cleanUsername || !cleanPassword) {
+    return { success: false, message: 'Vui lòng nhập đủ Họ Tên, Tên Đăng Nhập và Mật Khẩu.' };
+  }
+
   const allStudents = getTeacherStudents();
-  const updated = [student, ...allStudents.filter((s) => s.id !== student.id)];
+  const duplicate = allStudents.find((s) => s.username.toLowerCase() === cleanUsername);
+
+  if (duplicate) {
+    return { success: false, message: 'Tên đăng nhập này đã được sử dụng. Vui lòng chọn Tên đăng nhập khác.' };
+  }
+
+  const newStudent: StudentAccount = {
+    id: `std-${Date.now()}`,
+    teacherId: teacherId || 'tch-101',
+    fullName: cleanName,
+    username: cleanUsername,
+    passwordText: cleanPassword,
+    createdAt: new Date().toISOString(),
+  };
+
+  const updatedList = [newStudent, ...allStudents];
   if (isWindowAvailable()) {
     try {
-      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(updated));
+      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(updatedList));
     } catch (error) {
-      console.error('Failed to save student:', error);
+      console.error('Failed to save student account:', error);
     }
   }
-  return updated;
+
+  return {
+    success: true,
+    message: 'Tạo tài khoản học sinh thành công!',
+    student: newStudent,
+  };
 };
 
-export const deleteTeacherStudent = (studentId: string, teacherId?: string): TeacherStudent[] => {
+export const loginStudent = (username: string, passwordText: string): AuthResponse => {
+  const cleanUsername = username.trim().toLowerCase();
+  const cleanPassword = passwordText.trim();
+
+  if (!cleanUsername || !cleanPassword) {
+    return { success: false, message: 'Vui lòng nhập Tên Đăng Nhập và Mật Khẩu.' };
+  }
+
+  const allStudents = getTeacherStudents();
+  const student = allStudents.find(
+    (s) => s.username.toLowerCase() === cleanUsername && s.passwordText === cleanPassword
+  );
+
+  if (!student) {
+    return { success: false, message: 'Tên đăng nhập hoặc mật khẩu không chính xác.' };
+  }
+
+  const userProfile: UserProfile = {
+    id: student.id,
+    fullName: student.fullName,
+    username: student.username,
+    role: 'student',
+  };
+
+  return {
+    success: true,
+    message: 'Đăng nhập thành công!',
+    user: userProfile,
+  };
+};
+
+export const deleteTeacherStudent = (studentId: string, teacherId?: string): StudentAccount[] => {
   const allStudents = getTeacherStudents();
   const updated = allStudents.filter((s) => s.id !== studentId);
   if (isWindowAvailable()) {
@@ -165,7 +257,7 @@ export const deleteTeacherStudent = (studentId: string, teacherId?: string): Tea
   return teacherId ? updated.filter((s) => s.teacherId === teacherId) : updated;
 };
 
-// Classroom Management Functions (Version 3.1)
+// Classroom Management Functions
 export const getTeacherClassrooms = (teacherId?: string): Classroom[] => {
   if (!isWindowAvailable()) return DEFAULT_CLASSROOMS;
   try {

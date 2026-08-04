@@ -38,14 +38,14 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
 }) => {
   return (
     <View style={styles.outerLayout}>
-      {/* 16:9 Central Interactive Container (Bug 4: Screen Share Viewport) */}
+      {/* Version 4.0: 16:9 Central Container with Mobile-Safe Screen Share Video (<video autoPlay playsInline muted />) */}
       <View
         style={[
           styles.viewportContainer16x9,
           { width: containerWidth, height: containerHeight },
         ]}
       >
-        {/* Background Stream or Interactive Whiteboard */}
+        {/* Background Screen Share Stream or Interactive Whiteboard */}
         {screenStream ? (
           <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
             <video
@@ -84,7 +84,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         />
       </View>
 
-      {/* Bug 3: Participant Video Grid Sidebar / Bottom Bar with Live Video Feeds */}
+      {/* Participant Video Grid Sidebar / Bottom Bar with Mobile-Safe Video Feeds */}
       <View style={styles.participantsRail}>
         {participants.map((p) => (
           <ParticipantCard
@@ -120,7 +120,7 @@ const ParticipantCard: React.FC<{
   return (
     <View style={styles.participantCard}>
       <View style={styles.participantAvatarArea}>
-        {/* Bug 3: Render Live Camera Stream if Cam is ON */}
+        {/* Version 4.0: Mobile-safe Video Feed with autoPlay playsInline muted */}
         {p.isCamOn && p.stream ? (
           <div style={{ width: 64, height: 64, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' }}>
             <video
@@ -146,7 +146,7 @@ const ParticipantCard: React.FC<{
           </View>
         )}
 
-        {/* Bug 3: Status Indicators */}
+        {/* Status Indicators */}
         <View style={styles.statusBadges}>
           <View
             style={[

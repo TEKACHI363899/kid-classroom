@@ -8,6 +8,7 @@ export interface UserProfile {
   id: string;
   fullName: string;
   role: UserRole;
+  username?: string;
   email?: string;
   avatarUrl?: string;
   createdAt?: string;
@@ -19,6 +20,24 @@ export interface TeacherAccount {
   email: string;
   passwordHash: string;
   createdAt: string;
+}
+
+export interface StudentAccount {
+  id: string;
+  teacherId: string;
+  fullName: string;
+  username: string;
+  passwordText: string;
+  createdAt?: string;
+}
+
+export interface WebRTCConnection {
+  connectionId: string;
+  userId: string;
+  userName: string;
+  deviceType: 'desktop' | 'mobile' | 'tablet';
+  streamType: 'user_media' | 'screen_share';
+  stream?: MediaStream;
 }
 
 export interface AuthResponse {
@@ -47,13 +66,7 @@ export interface FloatingTextInputState {
   color: string;
 }
 
-export interface TeacherStudent {
-  id: string;
-  teacherId: string;
-  studentName: string;
-  accessCode: string;
-  createdAt?: string;
-}
+export interface TeacherStudent extends StudentAccount {}
 
 export interface Classroom {
   id: string;

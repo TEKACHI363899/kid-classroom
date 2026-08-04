@@ -1,12 +1,12 @@
 -- ==========================================
 -- SUPABASE SQL DATABASE SCHEMA & SECURITY POLICIES
--- Interactive Kid Classroom Web Application (Version 3.1)
+-- Interactive Kid Classroom Web Application (Version 4.0)
 -- ==========================================
 
 -- 0. Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. Profiles Table (Teachers and Students)
+-- 1. Profiles Table (Teachers and System Accounts)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     full_name VARCHAR(255) NOT NULL,
@@ -15,16 +15,17 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Teacher-Student Binding Table
-CREATE TABLE IF NOT EXISTS public.teacher_students (
+-- 2. Students Account Table (Version 4.0: Username & Password Auth)
+CREATE TABLE IF NOT EXISTS public.students (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     teacher_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    student_name VARCHAR(255) NOT NULL,
-    access_code VARCHAR(50) UNIQUE NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Classrooms / Schedules Table (Version 3.1 Schema)
+-- 3. Classrooms / Schedules Table (Version 4.0 Schema)
 CREATE TABLE IF NOT EXISTS public.classrooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(255) NOT NULL,
@@ -41,7 +42,7 @@ CREATE TABLE IF NOT EXISTS public.classrooms (
 CREATE TABLE IF NOT EXISTS public.classroom_students (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,
-    student_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     student_name VARCHAR(255) NOT NULL,
     can_draw BOOLEAN DEFAULT false,
     joined_at TIMESTAMP WITH TIME ZONE
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS public.classroom_students (
 
 -- 5. Row Level Security (RLS) Setup
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.teacher_students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classrooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classroom_students ENABLE ROW LEVEL SECURITY;
 
@@ -66,6 +67,12 @@ ON public.classrooms FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete classrooms" 
 ON public.classrooms FOR DELETE USING (true);
 
+CREATE POLICY "Allow public read students" 
+ON public.students FOR SELECT USING (true);
+
+CREATE POLICY "Allow public manage students" 
+ON public.students FOR ALL USING (true);
+
 CREATE POLICY "Allow public read classroom_students" 
 ON public.classroom_students FOR SELECT USING (true);
 
@@ -74,6 +81,3 @@ ON public.classroom_students FOR ALL USING (true);
 
 CREATE POLICY "Allow public profiles access" 
 ON public.profiles FOR ALL USING (true);
-
-CREATE POLICY "Allow public teacher_students access" 
-ON public.teacher_students FOR ALL USING (true);

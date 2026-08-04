@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
-import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus, Trash2, StopCircle } from 'lucide-react';
+import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus, Trash2, StopCircle, Eye, EyeOff } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
-import type { TeacherStudent, Classroom } from '../types';
+import type { StudentAccount, Classroom } from '../types';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import {
@@ -11,7 +11,8 @@ import {
   updateClassroomStatus,
   deleteTeacherClassroom,
   getTeacherStudents,
-  saveTeacherStudent,
+  registerStudentAccount,
+  deleteTeacherStudent,
 } from '../services/storageService';
 
 export interface TeacherDashboardProps {
@@ -19,12 +20,18 @@ export interface TeacherDashboardProps {
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom }) => {
-  const [students, setStudents] = useState<TeacherStudent[]>([]);
+  const [students, setStudents] = useState<StudentAccount[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
 
-  // Add Student Modal
+  // Add Student Modal State (3 fields: fullName, username, passwordText)
   const [addStudentVisible, setAddStudentVisible] = useState<boolean>(false);
-  const [newStudentName, setNewStudentName] = useState<string>('');
+  const [newStudentFullName, setNewStudentFullName] = useState<string>('');
+  const [newStudentUsername, setNewStudentUsername] = useState<string>('');
+  const [newStudentPassword, setNewStudentPassword] = useState<string>('');
+  const [addStudentError, setAddStudentError] = useState<string | null>(null);
+
+  // Show/Hide Password State per student ID
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
 
   // Schedule Modal
   const [addScheduleVisible, setAddScheduleVisible] = useState<boolean>(false);
@@ -37,19 +44,49 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
     setStudents(getTeacherStudents());
   }, []);
 
-  const handleAddStudent = () => {
-    if (!newStudentName.trim()) return;
-    const accessCode = `STD${Math.floor(1000 + Math.random() * 9000)}`;
-    const newStudent: TeacherStudent = {
-      id: `std-${Date.now()}`,
-      teacherId: 'tch-101',
-      studentName: newStudentName.trim(),
-      accessCode,
-    };
-    const updated = saveTeacherStudent(newStudent);
+  const handleAddStudentSubmit = () => {
+    setAddStudentError(null);
+    if (!newStudentFullName.trim() || !newStudentUsername.trim() || !newStudentPassword.trim()) {
+      setAddStudentError('Vui lòng nhập đủ Họ Tên, Tên Đăng Nhập và Mật Khẩu.');
+      return;
+    }
+
+    const res = registerStudentAccount(
+      'tch-101',
+      newStudentFullName,
+      newStudentUsername,
+      newStudentPassword
+    );
+
+    if (res.success) {
+      setStudents(getTeacherStudents());
+      setNewStudentFullName('');
+      setNewStudentUsername('');
+      setNewStudentPassword('');
+      setAddStudentVisible(false);
+    } else {
+      setAddStudentError(res.message);
+    }
+  };
+
+  const handleDeleteStudent = (stdId: string) => {
+    const updated = deleteTeacherStudent(stdId);
     setStudents(updated);
-    setNewStudentName('');
-    setAddStudentVisible(false);
+  };
+
+  const togglePasswordVisibility = (stdId: string) => {
+    setVisiblePasswords((prev) => ({ ...prev, [stdId]: !prev[stdId] }));
+  };
+
+  const copyStudentCredentialsText = (std: StudentAccount) => {
+    const origin = window.location.origin;
+    const textToCopy = `Thông tin tài khoản học sinh ${std.fullName}:\nTên đăng nhập: ${std.username}\nMật khẩu: ${std.passwordText}\nĐịa chỉ Web: ${origin}`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy);
+      setCopiedId(std.id);
+      setTimeout(() => setCopiedId(null), 2500);
+    }
   };
 
   const handleAddSchedule = () => {
@@ -87,15 +124,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
     setClassrooms(updated);
   };
 
-  const copyParentLink = (std: TeacherStudent) => {
-    const parentLink = `${window.location.origin}/login?student_code=${std.accessCode}`;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(parentLink);
-      setCopiedId(std.id);
-      setTimeout(() => setCopiedId(null), 2500);
-    }
-  };
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.contentWrapper}>
@@ -110,60 +138,80 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
             icon={Video}
             variant="success"
             onPress={() => {
-              const liveCode = 'MATH101';
-              onStartRoom(liveCode, 'Lớp Học Tương Tác Trực Tiếp');
+              onStartRoom('MATH101', 'Lớp Học Tương Tác Trực Tiếp');
             }}
           />
         </View>
 
-        {/* Section 1: Student Management */}
+        {/* Section 1: Student Roster Management */}
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleGroup}>
             <Users size={ICON_SIZES.lg} color={COLORS.primary} />
             <Text style={styles.sectionTitle}>Danh Sách Học Sinh ({students.length})</Text>
           </View>
           <Button
-            label="Thêm Học Sinh"
+            label="Thêm Học Sinh Mới"
             icon={UserPlus}
             variant="primary"
             size="sm"
-            onPress={() => setAddStudentVisible(true)}
+            onPress={() => {
+              setAddStudentError(null);
+              setAddStudentVisible(true);
+            }}
           />
         </View>
 
         {students.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>Chưa có học sinh trong danh sách. Bấm nút "Thêm Học Sinh" để tạo thẻ bài giảng cho học sinh nhé!</Text>
+            <Text style={styles.emptyText}>Chưa có học sinh trong danh sách. Bấm "Thêm Học Sinh Mới" để khởi tạo Tên Đăng Nhập & Mật Khẩu nhé!</Text>
           </View>
         ) : (
           <View style={styles.studentCardsGrid}>
-            {students.map((std) => (
-              <View key={std.id} style={styles.studentCard}>
-                <View style={styles.studentCardHeader}>
-                  <View style={styles.studentAvatar}>
-                    <Sparkles size={ICON_SIZES.md} color={COLORS.primary} />
+            {students.map((std) => {
+              const showPass = visiblePasswords[std.id] || false;
+              return (
+                <View key={std.id} style={styles.studentCard}>
+                  <View style={styles.studentCardHeader}>
+                    <View style={styles.studentAvatar}>
+                      <Sparkles size={ICON_SIZES.md} color={COLORS.primary} />
+                    </View>
+                    <View style={styles.studentDetails}>
+                      <Text style={styles.studentName}>{std.fullName}</Text>
+                      <Text style={styles.credentialsText}>Username: <Text style={styles.boldCred}>{std.username}</Text></Text>
+                      <View style={styles.passRow}>
+                        <Text style={styles.credentialsText}>
+                          Mật khẩu: <Text style={styles.boldCred}>{showPass ? std.passwordText : '••••••••'}</Text>
+                        </Text>
+                        <TouchableOpacity onPress={() => togglePasswordVisibility(std.id)} style={styles.eyeBtn}>
+                          {showPass ? (
+                            <EyeOff size={16} color={COLORS.gray600} />
+                          ) : (
+                            <Eye size={16} color={COLORS.primary} />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => handleDeleteStudent(std.id)} style={styles.delStdBtn}>
+                      <Trash2 size={16} color={COLORS.gray400} />
+                    </TouchableOpacity>
                   </View>
-                  <View style={styles.studentDetails}>
-                    <Text style={styles.studentName}>{std.studentName}</Text>
-                    <Text style={styles.accessCode}>Mã: {std.accessCode}</Text>
-                  </View>
-                </View>
 
-                <TouchableOpacity
-                  onPress={() => copyParentLink(std)}
-                  style={[styles.copyLinkBtn, copiedId === std.id && styles.copyLinkBtnSuccess]}
-                >
-                  {copiedId === std.id ? (
-                    <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
-                  ) : (
-                    <Copy size={ICON_SIZES.sm} color={COLORS.primary} />
-                  )}
-                  <Text style={[styles.copyLinkText, copiedId === std.id && { color: COLORS.success }]}>
-                    {copiedId === std.id ? 'Đã Sao Chép!' : 'Link Đăng Nhập Phụ Huynh'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+                  <TouchableOpacity
+                    onPress={() => copyStudentCredentialsText(std)}
+                    style={[styles.copyLinkBtn, copiedId === std.id && styles.copyLinkBtnSuccess]}
+                  >
+                    {copiedId === std.id ? (
+                      <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
+                    ) : (
+                      <Copy size={ICON_SIZES.sm} color={COLORS.primary} />
+                    )}
+                    <Text style={[styles.copyLinkText, copiedId === std.id && { color: COLORS.success }]}>
+                      {copiedId === std.id ? 'Đã Sao Chép Khẩu!' : 'Sao Chép Thông Tin Tài Khoản'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -252,24 +300,50 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
         </View>
       </View>
 
-      {/* Modal Add Student */}
+      {/* Version 4.0: Modal Add Student with Username & Password */}
       <Modal
         visible={addStudentVisible}
         onClose={() => setAddStudentVisible(false)}
         title="Thêm Học Sinh Mới"
-        description="Nhập họ tên học sinh để tạo tài khoản và đường link truy cập nhanh."
+        description="Khởi tạo Tên Đăng Nhập và Mật Khẩu để gửi cho Học sinh / Phụ huynh."
         confirmLabel="Tạo Tài Khoản"
         confirmVariant="primary"
-        onConfirm={handleAddStudent}
+        onConfirm={handleAddStudentSubmit}
         cancelLabel="Hủy"
       >
-        <TextInput
-          style={styles.modalInput}
-          placeholder="Nhập tên học sinh (VD: Nguyễn Văn An)..."
-          placeholderTextColor={COLORS.gray400}
-          value={newStudentName}
-          onChangeText={setNewStudentName}
-        />
+        <View style={styles.modalForm}>
+          {addStudentError && (
+            <Text style={styles.modalErrorText}>{addStudentError}</Text>
+          )}
+
+          <Text style={styles.modalInputLabel}>Họ và Tên Học Sinh</Text>
+          <TextInput
+            style={styles.modalInput}
+            placeholder="VD: Nguyễn Văn An"
+            placeholderTextColor={COLORS.gray400}
+            value={newStudentFullName}
+            onChangeText={setNewStudentFullName}
+          />
+
+          <Text style={styles.modalInputLabel}>Tên Đăng Nhập (Username - Không dấu, viết liền)</Text>
+          <TextInput
+            style={styles.textInputLower}
+            placeholder="VD: hocsinhan"
+            placeholderTextColor={COLORS.gray400}
+            value={newStudentUsername}
+            onChangeText={setNewStudentUsername}
+            autoCapitalize="none"
+          />
+
+          <Text style={styles.modalInputLabel}>Mật Khẩu (Password)</Text>
+          <TextInput
+            style={styles.modalInput}
+            placeholder="VD: 123456"
+            placeholderTextColor={COLORS.gray400}
+            value={newStudentPassword}
+            onChangeText={setNewStudentPassword}
+          />
+        </View>
       </Modal>
 
       {/* Modal Create Schedule */}
@@ -375,7 +449,7 @@ const styles = StyleSheet.create({
   },
   studentCard: {
     flex: 1,
-    minWidth: 260,
+    minWidth: 280,
     backgroundColor: COLORS.white,
     borderRadius: 20,
     padding: 18,
@@ -388,7 +462,7 @@ const styles = StyleSheet.create({
   },
   studentCardHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
     marginBottom: 16,
   },
@@ -405,13 +479,30 @@ const styles = StyleSheet.create({
   },
   studentName: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '900',
     color: COLORS.textDark,
+    marginBottom: 2,
   },
-  accessCode: {
+  credentialsText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
+    color: COLORS.gray600,
+    marginTop: 2,
+  },
+  boldCred: {
+    fontWeight: '800',
     color: COLORS.primary,
+  },
+  passRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  eyeBtn: {
+    padding: 2,
+  },
+  delStdBtn: {
+    padding: 4,
   },
   copyLinkBtn: {
     flexDirection: 'row',
@@ -495,12 +586,35 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: COLORS.gray100,
   },
+  modalForm: {
+    gap: 10,
+  },
+  modalErrorText: {
+    color: COLORS.danger,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalInputLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginTop: 4,
+  },
   modalInput: {
     borderWidth: 2,
     borderColor: COLORS.primary,
     borderRadius: 14,
-    padding: 14,
-    fontSize: 16,
+    padding: 12,
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  textInputLower: {
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 15,
     fontWeight: '700',
     color: COLORS.textDark,
   },

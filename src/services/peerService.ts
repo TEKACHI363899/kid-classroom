@@ -19,16 +19,25 @@ export class PeerService {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private events: PeerServiceEvents = {};
+  private activeConnectionId: string = '';
 
-  public initialize(peerId: string, events: PeerServiceEvents): Promise<string> {
+  // Version 4.0: Unique Connection ID Generator per device tab
+  public generateUniqueConnectionId(userId: string): string {
+    const cleanUserId = userId.replace(/[^a-zA-Z0-9_-]/g, '');
+    const rand = Math.random().toString(36).substr(2, 4);
+    return `${cleanUserId}_${Date.now()}_${rand}`;
+  }
+
+  public initialize(userId: string, events: PeerServiceEvents): Promise<string> {
     this.events = events;
     this.reconnectAttempts = 0;
+    this.activeConnectionId = this.generateUniqueConnectionId(userId);
 
     return new Promise((resolve) => {
       this.events.onConnectionStatusChange?.('connecting');
 
       try {
-        this.peer = new Peer(peerId, {
+        this.peer = new Peer(this.activeConnectionId, {
           debug: 1,
           config: {
             iceServers: [
@@ -40,6 +49,7 @@ export class PeerService {
         });
 
         this.peer.on('open', (id) => {
+          this.activeConnectionId = id;
           this.reconnectAttempts = 0;
           this.events.onConnectionStatusChange?.('connected');
           resolve(id);
@@ -71,9 +81,13 @@ export class PeerService {
       } catch (error) {
         console.error('PeerJS init failed, entering standalone mode', error);
         this.events.onConnectionStatusChange?.('connected');
-        resolve(peerId);
+        resolve(this.activeConnectionId);
       }
     });
+  }
+
+  public get getConnectionId(): string {
+    return this.activeConnectionId;
   }
 
   private handleReconnect(): void {
@@ -154,13 +168,13 @@ export class PeerService {
     }
   }
 
-  public callPeer(peerId: string): void {
+  public callPeer(targetConnectionId: string): void {
     if (!this.peer || this.peer.destroyed) return;
     try {
-      const call = this.localStream ? this.peer.call(peerId, this.localStream) : this.peer.call(peerId, new MediaStream());
+      const call = this.localStream ? this.peer.call(targetConnectionId, this.localStream) : this.peer.call(targetConnectionId, new MediaStream());
       this.handleCall(call);
 
-      const conn = this.peer.connect(peerId);
+      const conn = this.peer.connect(targetConnectionId);
       this.handleDataConnection(conn);
     } catch (e) {
       console.warn('Call peer error:', e);

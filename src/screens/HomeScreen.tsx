@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { User, ShieldCheck, ArrowRight, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
+import { User, ShieldCheck, LogIn, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserRole, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
-import { registerTeacher, loginTeacher } from '../services/storageService';
+import { registerTeacher, loginTeacher, loginStudent } from '../services/storageService';
 
 export interface HomeScreenProps {
   onLogin: (user: UserProfile, roomCode?: string) => void;
@@ -12,17 +12,20 @@ export interface HomeScreenProps {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
-  const [studentName, setStudentName] = useState<string>('');
   const [roomCode, setRoomCode] = useState<string>('MATH101');
+
+  // Version 4.0: Student Username & Password State
+  const [studentUsername, setStudentUsername] = useState<string>('hocsinhan');
+  const [studentPassword, setStudentPassword] = useState<string>('123456');
 
   // Teacher Auth Mode State: 'login' | 'register'
   const [teacherAuthMode, setTeacherAuthMode] = useState<'login' | 'register'>('login');
 
-  // Login Form State
+  // Teacher Login Form State
   const [loginEmail, setLoginEmail] = useState<string>('teacher@kidclass.edu.vn');
   const [loginPassword, setLoginPassword] = useState<string>('123456');
 
-  // Registration Form State
+  // Teacher Registration Form State
   const [regFullName, setRegFullName] = useState<string>('');
   const [regEmail, setRegEmail] = useState<string>('');
   const [regPassword, setRegPassword] = useState<string>('');
@@ -35,40 +38,39 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const urlName = params.get('name');
       const urlRoom = params.get('room') || params.get('code');
-      if (urlName) {
-        setStudentName(urlName);
-      }
       if (urlRoom) {
         setRoomCode(urlRoom);
       }
     }
   }, []);
 
-  const handleStudentJoin = () => {
-    const finalName = studentName.trim() || 'Học Sinh Thân Yêu';
-    const user: UserProfile = {
-      id: `std-${Date.now()}`,
-      fullName: finalName,
-      role: 'student',
-    };
-    onLogin(user, roomCode);
+  // Version 4.0: Student Login via Username & Password
+  const handleStudentLoginSubmit = () => {
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    const res = loginStudent(studentUsername, studentPassword);
+    if (res.success && res.user) {
+      setAuthSuccess(res.message);
+      setTimeout(() => onLogin(res.user!, roomCode), 500);
+      return;
+    }
+
+    setAuthError(res.message);
   };
 
   const handleTeacherLogin = () => {
     setAuthError(null);
     setAuthSuccess(null);
 
-    // Try custom login first
     const res = loginTeacher(loginEmail, loginPassword);
     if (res.success && res.user) {
       setAuthSuccess(res.message);
-      setTimeout(() => onLogin(res.user!, roomCode), 600);
+      setTimeout(() => onLogin(res.user!, roomCode), 500);
       return;
     }
 
-    // Quick demo login fallback
     if (loginEmail === 'teacher@kidclass.edu.vn' || !loginEmail.trim()) {
       const demoUser: UserProfile = {
         id: 'tch-101',
@@ -107,7 +109,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
     const res = registerTeacher(regFullName, regEmail, regPassword);
     if (res.success && res.user) {
       setAuthSuccess(res.message);
-      setTimeout(() => onLogin(res.user!, roomCode), 800);
+      setTimeout(() => onLogin(res.user!, roomCode), 700);
     } else {
       setAuthError(res.message);
     }
@@ -137,7 +139,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           >
             <User size={ICON_SIZES.md} color={selectedRole === 'student' ? COLORS.white : COLORS.primary} />
             <Text style={[styles.roleTabText, selectedRole === 'student' && styles.roleTabTextActive]}>
-              Học Sinh (Vào Lớp Ngay)
+              Đăng Nhập Học Sinh
             </Text>
           </TouchableOpacity>
 
@@ -156,34 +158,52 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           </TouchableOpacity>
         </View>
 
+        {/* Status Feedback Banners */}
+        {authError && (
+          <View style={styles.errorBox}>
+            <AlertCircle size={ICON_SIZES.sm} color={COLORS.danger} />
+            <Text style={styles.errorText}>{authError}</Text>
+          </View>
+        )}
+
+        {authSuccess && (
+          <View style={styles.successBox}>
+            <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
+            <Text style={styles.successText}>{authSuccess}</Text>
+          </View>
+        )}
+
         {/* Form Body */}
         {selectedRole === 'student' ? (
+          /* Version 4.0: Student Credentials Login Form */
           <View style={styles.formContent}>
-            <Text style={styles.inputLabel}>Tên Học Sinh Của Bạn</Text>
+            <Text style={styles.inputLabel}>Tên Đăng Nhập (Username)</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập tên em (VD: Nguyễn Văn Nam)..."
+              placeholder="Nhập username (VD: hocsinhan)..."
               placeholderTextColor={COLORS.gray400}
-              value={studentName}
-              onChangeText={setStudentName}
+              value={studentUsername}
+              onChangeText={setStudentUsername}
+              autoCapitalize="none"
               autoFocus
             />
 
-            <Text style={styles.inputLabel}>Mã Phòng Học</Text>
+            <Text style={styles.inputLabel}>Mật Khẩu (Password)</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập Mã Lớp (VD: MATH101)..."
+              placeholder="Nhập mật khẩu..."
               placeholderTextColor={COLORS.gray400}
-              value={roomCode}
-              onChangeText={setRoomCode}
+              secureTextEntry
+              value={studentPassword}
+              onChangeText={setStudentPassword}
+              onSubmitEditing={handleStudentLoginSubmit}
             />
 
             <Button
-              label="Vào Lớp Học Ngay"
-              icon={ArrowRight}
-              iconPosition="right"
+              label="Đăng Nhập Về Dashboard"
+              icon={LogIn}
               variant="success"
-              onPress={handleStudentJoin}
+              onPress={handleStudentLoginSubmit}
               style={styles.submitBtn}
             />
           </View>
@@ -219,21 +239,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
                 </Text>
               </TouchableOpacity>
             </View>
-
-            {/* Status Feedback Banners */}
-            {authError && (
-              <View style={styles.errorBox}>
-                <AlertCircle size={ICON_SIZES.sm} color={COLORS.danger} />
-                <Text style={styles.errorText}>{authError}</Text>
-              </View>
-            )}
-
-            {authSuccess && (
-              <View style={styles.successBox}>
-                <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
-                <Text style={styles.successText}>{authSuccess}</Text>
-              </View>
-            )}
 
             {teacherAuthMode === 'login' ? (
               <>
@@ -371,7 +376,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.gray100,
     borderRadius: 20,
     padding: 6,
-    marginBottom: 24,
+    marginBottom: 20,
     gap: 8,
   },
   roleTab: {
@@ -461,6 +466,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFE4E6',
     borderRadius: 12,
     padding: 12,
+    marginBottom: 8,
   },
   errorText: {
     color: COLORS.danger,
@@ -475,6 +481,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ECFDF5',
     borderRadius: 12,
     padding: 12,
+    marginBottom: 8,
   },
   successText: {
     color: COLORS.success,

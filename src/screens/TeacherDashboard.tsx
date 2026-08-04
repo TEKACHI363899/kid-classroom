@@ -138,7 +138,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
         {/* Header Hero Section */}
         <View style={styles.heroBanner}>
           <View style={styles.heroTextGroup}>
-            <Text style={styles.heroTitle}>Bảng Quản Lý Lớp Học Của Cô</Text>
+            <Text style={styles.heroTitle}>Bảng Quản Lý Lớp Học Của Thầy</Text>
             <Text style={styles.heroSub}>Tạo danh sách học sinh, lên lịch buổi dạy và mở lớp 1-Click</Text>
           </View>
           <Button

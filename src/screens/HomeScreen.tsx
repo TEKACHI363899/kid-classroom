@@ -309,7 +309,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
                 <Text style={styles.inputLabel}>Họ và Tên Giáo Viên</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="VD: Cô Nông Thị Tuyết"
+                  placeholder="VD: Thầy Ngô Thành Đạt"
                   placeholderTextColor={COLORS.gray400}
                   value={regFullName}
                   onChangeText={setRegFullName}

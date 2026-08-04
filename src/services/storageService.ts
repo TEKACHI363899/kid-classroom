@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 import type {
   TeacherAccount,
   StudentAccount,
@@ -21,17 +21,29 @@ const isWindowAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 };
 
-// Global Realtime Student Account Sync Listener
-if (typeof window !== 'undefined') {
-  try {
-    const syncChannel = supabase.channel('global_student_sync', {
-      config: { broadcast: { self: true } },
-    });
+// Helper: Timeout wrapper for network promises (Max 1200ms to prevent hanging on demo/unreachable URLs)
+const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number = 1200): Promise<T | null> => {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+  ]);
+};
 
-    syncChannel
-      .on('broadcast', { event: 'NEW_STUDENT_ACCOUNT' }, (payload) => {
-        if (payload && payload.payload) {
-          const newStudent = payload.payload as StudentAccount;
+// Cross-Window & Incognito Tab Synchronization via BroadcastChannel
+const BROADCAST_CHANNEL_NAME = 'kid_classroom_global_sync';
+let broadcastChannel: BroadcastChannel | null = null;
+
+if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+  try {
+    broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+
+    broadcastChannel.onmessage = (event) => {
+      const data = event.data;
+      if (!data || !data.type) return;
+
+      if (data.type === 'SYNC_STUDENT_ACCOUNT') {
+        const newStudent = data.payload as StudentAccount;
+        if (newStudent && newStudent.username) {
           const currentList = getTeacherStudents();
           const exists = currentList.some(
             (s) => s.username.toLowerCase() === newStudent.username.toLowerCase()
@@ -43,10 +55,33 @@ if (typeof window !== 'undefined') {
             }
           }
         }
-      })
-      .subscribe();
+      } else if (data.type === 'REQUEST_STUDENTS_SYNC') {
+        const currentList = getTeacherStudents();
+        if (currentList.length > 0 && broadcastChannel) {
+          broadcastChannel.postMessage({
+            type: 'RESPONSE_STUDENTS_SYNC',
+            payload: currentList,
+          });
+        }
+      } else if (data.type === 'RESPONSE_STUDENTS_SYNC') {
+        const receivedStudents = data.payload as StudentAccount[];
+        if (Array.isArray(receivedStudents) && receivedStudents.length > 0) {
+          const currentList = getTeacherStudents();
+          const mergedMap = new Map<string, StudentAccount>();
+          currentList.forEach((s) => mergedMap.set(s.username.toLowerCase(), s));
+          receivedStudents.forEach((s) => mergedMap.set(s.username.toLowerCase(), s));
+
+          const mergedArray = Array.from(mergedMap.values());
+          if (isWindowAvailable()) {
+            localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedArray));
+          }
+        }
+      }
+    };
+
+    broadcastChannel.postMessage({ type: 'REQUEST_STUDENTS_SYNC' });
   } catch (err) {
-    console.warn('Realtime student sync init error:', err);
+    console.warn('BroadcastChannel sync init warning:', err);
   }
 }
 
@@ -215,7 +250,7 @@ export const loginTeacher = async (email: string, password: string): Promise<Aut
 
   const userProfile: UserProfile = {
     id: teacher ? teacher.id : 'tch-101',
-    fullName: teacher ? teacher.fullName : 'Cô Nông Thị Tuyết',
+    fullName: teacher ? teacher.fullName : 'Thầy Ngô Thành Đạt',
     role: 'teacher',
     email: normalizedEmail,
   };
@@ -286,24 +321,34 @@ export const registerStudentAccount = async (
     }
   }
 
-  // 2. Broadcast over Supabase Realtime & insert into Database
-  try {
-    const syncChannel = supabase.channel('global_student_sync');
-    syncChannel.send({
-      type: 'broadcast',
-      event: 'NEW_STUDENT_ACCOUNT',
-      payload: newStudent,
-    });
+  // 2. Cross-Window Broadcast via BroadcastChannel (0ms latency for Incognito tabs)
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({
+        type: 'SYNC_STUDENT_ACCOUNT',
+        payload: newStudent,
+      });
+    } catch (err) {
+      console.warn('BroadcastChannel send error:', err);
+    }
+  }
 
-    await supabase.from('students').upsert({
-      id: newStudent.id,
-      teacher_id: newStudent.teacherId,
-      full_name: newStudent.fullName,
-      username: newStudent.username,
-      password_hash: newStudent.passwordText,
-    });
-  } catch (err) {
-    console.warn('Supabase DB student upsert background warning:', err);
+  // 3. Supabase DB Upsert with 1200ms Timeout Limit
+  if (isSupabaseConfigured()) {
+    try {
+      await withTimeout(
+        supabase.from('students').upsert({
+          id: newStudent.id,
+          teacher_id: newStudent.teacherId,
+          full_name: newStudent.fullName,
+          username: newStudent.username,
+          password_hash: newStudent.passwordText,
+        }),
+        1200
+      );
+    } catch (err) {
+      console.warn('Supabase DB student upsert background warning:', err);
+    }
   }
 
   return {
@@ -313,7 +358,6 @@ export const registerStudentAccount = async (
   };
 };
 
-// Version 5.1 Hardened Cross-Device & Incognito Login
 export const loginStudent = async (usernameInput: string, passwordInput: string): Promise<AuthResponse> => {
   const cleanUsername = usernameInput.trim().toLowerCase();
   const cleanPassword = passwordInput.trim();
@@ -324,32 +368,43 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
 
   let foundStudent: StudentAccount | null = null;
 
-  // 1. Check local storage / synchronized cache first
+  // 1. Request instant sync from active tabs via BroadcastChannel if empty
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({ type: 'REQUEST_STUDENTS_SYNC' });
+    } catch (err) {
+      console.warn('BroadcastChannel sync request error:', err);
+    }
+  }
+
+  // 2. Check local storage / synchronized cache first
   const allStudents = getTeacherStudents();
   const localMatch = allStudents.find((s) => s.username.trim().toLowerCase() === cleanUsername);
   if (localMatch) {
     foundStudent = localMatch;
   }
 
-  // 2. Query Supabase Database if not found locally or for multi-device sync
-  if (!foundStudent) {
+  // 3. If not found locally & Supabase is configured, query Supabase DB with 1.2s max timeout
+  if (!foundStudent && isSupabaseConfigured()) {
     try {
-      const { data, error } = await supabase
-        .from('students')
-        .select('*')
-        .eq('username', cleanUsername)
-        .maybeSingle();
+      const res = await withTimeout<{ data: { id: string; teacher_id: string; full_name: string; username: string; password_hash: string } | null; error: unknown }>(
+        supabase
+          .from('students')
+          .select('*')
+          .eq('username', cleanUsername)
+          .maybeSingle(),
+        1200
+      );
 
-      if (!error && data) {
+      if (res && !res.error && res.data) {
         foundStudent = {
-          id: data.id,
-          teacherId: data.teacher_id,
-          fullName: data.full_name,
-          username: data.username,
-          passwordText: data.password_hash,
+          id: res.data.id,
+          teacherId: res.data.teacher_id,
+          fullName: res.data.full_name,
+          username: res.data.username,
+          passwordText: res.data.password_hash,
         };
 
-        // Cache into local storage
         const currentList = getTeacherStudents();
         const updated = [foundStudent, ...currentList.filter((s) => s.id !== foundStudent!.id)];
         if (isWindowAvailable()) {
@@ -396,10 +451,12 @@ export const deleteTeacherStudent = (studentId: string, teacherId?: string): Stu
     }
   }
 
-  try {
-    supabase.from('students').delete().eq('id', studentId);
-  } catch (err) {
-    console.warn('Supabase delete student error:', err);
+  if (isSupabaseConfigured()) {
+    try {
+      withTimeout(supabase.from('students').delete().eq('id', studentId), 1000);
+    } catch (err) {
+      console.warn('Supabase delete student error:', err);
+    }
   }
 
   return teacherId ? updated.filter((s) => s.teacherId === teacherId) : updated;

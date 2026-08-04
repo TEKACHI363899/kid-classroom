@@ -45,7 +45,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoin
             </View>
 
             <Text style={styles.featuredTitle}>{liveClass.title}</Text>
-            <Text style={styles.featuredTeacher}>Giáo viên: Cô Nông Thị Tuyết</Text>
+            <Text style={styles.featuredTeacher}>Giáo viên: Thầy Ngô Thành Đạt</Text>
 
             <Button
               label="VÀO LỚP NGAY TẠI ĐÂY"

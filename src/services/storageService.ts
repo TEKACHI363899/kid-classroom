@@ -21,13 +21,77 @@ const isWindowAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 };
 
-// Helper: Timeout wrapper for network promises (Max 1200ms to prevent hanging on demo/unreachable URLs)
-const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number = 1200): Promise<T | null> => {
+// Helper: Timeout wrapper for network promises (4000ms max timeout for real cloud DB calls)
+const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number = 4000): Promise<T | null> => {
   return Promise.race([
     Promise.resolve(promise),
     new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
   ]);
 };
+
+// Bi-Directional Auto-Sync Engine for Cross-Device & Incognito Tabs
+export const syncStudentsWithSupabase = async (): Promise<StudentAccount[]> => {
+  const localList = getTeacherStudents();
+
+  if (!isSupabaseConfigured()) {
+    return localList;
+  }
+
+  try {
+    // 1. Fetch Cloud DB records
+    const res = await withTimeout<{ data: { id: string; teacher_id: string; full_name: string; username: string; password_hash: string }[] | null; error: unknown }>(
+      supabase.from('students').select('*'),
+      3000
+    );
+
+    if (res && !res.error && Array.isArray(res.data)) {
+      const dbStudents: StudentAccount[] = res.data.map((row) => ({
+        id: row.id,
+        teacherId: row.teacher_id,
+        fullName: row.full_name,
+        username: row.username,
+        passwordText: row.password_hash,
+      }));
+
+      // Merge DB students and local students
+      const mergedMap = new Map<string, StudentAccount>();
+      dbStudents.forEach((s) => mergedMap.set(s.username.toLowerCase(), s));
+      localList.forEach((s) => {
+        if (!mergedMap.has(s.username.toLowerCase())) {
+          mergedMap.set(s.username.toLowerCase(), s);
+          // Push local-only student (created offline/earlier) up to Supabase Cloud DB
+          withTimeout(
+            supabase.from('students').upsert({
+              id: s.id,
+              teacher_id: s.teacherId,
+              full_name: s.fullName,
+              username: s.username,
+              password_hash: s.passwordText,
+            }),
+            2500
+          );
+        }
+      });
+
+      const mergedList = Array.from(mergedMap.values());
+      if (isWindowAvailable()) {
+        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedList));
+      }
+      return mergedList;
+    }
+  } catch (err) {
+    console.warn('Supabase DB sync background warning:', err);
+  }
+
+  return localList;
+};
+
+// Trigger background sync on module load
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    syncStudentsWithSupabase();
+  }, 100);
+}
 
 // Cross-Window & Incognito Tab Synchronization via BroadcastChannel
 const BROADCAST_CHANNEL_NAME = 'kid_classroom_global_sync';
@@ -333,7 +397,7 @@ export const registerStudentAccount = async (
     }
   }
 
-  // 3. Supabase DB Upsert with 1200ms Timeout Limit
+  // 3. Supabase DB Upsert with Timeout Limit
   if (isSupabaseConfigured()) {
     try {
       await withTimeout(
@@ -344,7 +408,7 @@ export const registerStudentAccount = async (
           username: newStudent.username,
           password_hash: newStudent.passwordText,
         }),
-        1200
+        3000
       );
     } catch (err) {
       console.warn('Supabase DB student upsert background warning:', err);
@@ -366,25 +430,13 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
     return { success: false, message: 'Vui lòng nhập Tên Đăng Nhập và Mật Khẩu.' };
   }
 
-  let foundStudent: StudentAccount | null = null;
+  // 1. Auto-sync from Supabase DB to ensure new accounts created anywhere are loaded
+  const syncedStudents = await syncStudentsWithSupabase();
 
-  // 1. Request instant sync from active tabs via BroadcastChannel if empty
-  if (broadcastChannel) {
-    try {
-      broadcastChannel.postMessage({ type: 'REQUEST_STUDENTS_SYNC' });
-    } catch (err) {
-      console.warn('BroadcastChannel sync request error:', err);
-    }
-  }
+  let foundStudent: StudentAccount | null =
+    syncedStudents.find((s) => s.username.trim().toLowerCase() === cleanUsername) || null;
 
-  // 2. Check local storage / synchronized cache first
-  const allStudents = getTeacherStudents();
-  const localMatch = allStudents.find((s) => s.username.trim().toLowerCase() === cleanUsername);
-  if (localMatch) {
-    foundStudent = localMatch;
-  }
-
-  // 3. If not found locally & Supabase is configured, query Supabase DB with 1.2s max timeout
+  // 2. If still not found & Supabase is configured, query Supabase DB explicitly
   if (!foundStudent && isSupabaseConfigured()) {
     try {
       const res = await withTimeout<{ data: { id: string; teacher_id: string; full_name: string; username: string; password_hash: string } | null; error: unknown }>(
@@ -393,7 +445,7 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
           .select('*')
           .eq('username', cleanUsername)
           .maybeSingle(),
-        1200
+        3000
       );
 
       if (res && !res.error && res.data) {
@@ -453,7 +505,7 @@ export const deleteTeacherStudent = (studentId: string, teacherId?: string): Stu
 
   if (isSupabaseConfigured()) {
     try {
-      withTimeout(supabase.from('students').delete().eq('id', studentId), 1000);
+      withTimeout(supabase.from('students').delete().eq('id', studentId), 2000);
     } catch (err) {
       console.warn('Supabase delete student error:', err);
     }

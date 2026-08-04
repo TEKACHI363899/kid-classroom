@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { User, ShieldCheck, ArrowRight, BookOpen, KeyRound } from 'lucide-react';
+import { User, ShieldCheck, ArrowRight, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserRole, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
+import { registerTeacher, loginTeacher } from '../services/storageService';
 
 export interface HomeScreenProps {
   onLogin: (user: UserProfile, roomCode?: string) => void;
@@ -13,7 +14,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
   const [studentName, setStudentName] = useState<string>('');
   const [roomCode, setRoomCode] = useState<string>('MATH101');
-  const [teacherEmail, setTeacherEmail] = useState<string>('teacher@kidclass.edu.vn');
+
+  // Teacher Auth Mode State: 'login' | 'register'
+  const [teacherAuthMode, setTeacherAuthMode] = useState<'login' | 'register'>('login');
+
+  // Login Form State
+  const [loginEmail, setLoginEmail] = useState<string>('teacher@kidclass.edu.vn');
+  const [loginPassword, setLoginPassword] = useState<string>('123456');
+
+  // Registration Form State
+  const [regFullName, setRegFullName] = useState<string>('');
+  const [regEmail, setRegEmail] = useState<string>('');
+  const [regPassword, setRegPassword] = useState<string>('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
+
+  // Auth Status Message
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -39,13 +56,61 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
     onLogin(user, roomCode);
   };
 
-  const handleTeacherJoin = () => {
-    const user: UserProfile = {
-      id: `tch-101`,
-      fullName: 'Cô Nông Thị Tuyết',
-      role: 'teacher',
-    };
-    onLogin(user, roomCode);
+  const handleTeacherLogin = () => {
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    // Try custom login first
+    const res = loginTeacher(loginEmail, loginPassword);
+    if (res.success && res.user) {
+      setAuthSuccess(res.message);
+      setTimeout(() => onLogin(res.user!, roomCode), 600);
+      return;
+    }
+
+    // Quick demo login fallback
+    if (loginEmail === 'teacher@kidclass.edu.vn' || !loginEmail.trim()) {
+      const demoUser: UserProfile = {
+        id: 'tch-101',
+        fullName: 'Cô Nông Thị Tuyết',
+        role: 'teacher',
+        email: 'teacher@kidclass.edu.vn',
+      };
+      onLogin(demoUser, roomCode);
+      return;
+    }
+
+    setAuthError(res.message);
+  };
+
+  const handleTeacherRegister = () => {
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    if (!regFullName.trim()) {
+      setAuthError('Vui lòng nhập họ và tên của Giáo viên.');
+      return;
+    }
+    if (!regEmail.trim()) {
+      setAuthError('Vui lòng nhập địa chỉ Email đăng ký.');
+      return;
+    }
+    if (!regPassword.trim()) {
+      setAuthError('Vui lòng nhập mật khẩu.');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setAuthError('Mật khẩu nhập lại không trùng khớp.');
+      return;
+    }
+
+    const res = registerTeacher(regFullName, regEmail, regPassword);
+    if (res.success && res.user) {
+      setAuthSuccess(res.message);
+      setTimeout(() => onLogin(res.user!, roomCode), 800);
+    } else {
+      setAuthError(res.message);
+    }
   };
 
   return (
@@ -63,7 +128,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
         {/* Role Toggle Selector */}
         <View style={styles.roleToggleRow}>
           <TouchableOpacity
-            onPress={() => setSelectedRole('student')}
+            onPress={() => {
+              setSelectedRole('student');
+              setAuthError(null);
+              setAuthSuccess(null);
+            }}
             style={[styles.roleTab, selectedRole === 'student' && styles.roleTabActiveStudent]}
           >
             <User size={ICON_SIZES.md} color={selectedRole === 'student' ? COLORS.white : COLORS.primary} />
@@ -73,7 +142,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setSelectedRole('teacher')}
+            onPress={() => {
+              setSelectedRole('teacher');
+              setAuthError(null);
+              setAuthSuccess(null);
+            }}
             style={[styles.roleTab, selectedRole === 'teacher' && styles.roleTabActiveTeacher]}
           >
             <ShieldCheck size={ICON_SIZES.md} color={selectedRole === 'teacher' ? COLORS.white : COLORS.purple} />
@@ -116,31 +189,130 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           </View>
         ) : (
           <View style={styles.formContent}>
-            <Text style={styles.inputLabel}>Email Giáo Viên</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="nhap.email@truonghoc.edu.vn"
-              placeholderTextColor={COLORS.gray400}
-              value={teacherEmail}
-              onChangeText={setTeacherEmail}
-            />
+            {/* Sub Mode Selector for Teacher: Login vs Register */}
+            <View style={styles.subAuthToggle}>
+              <TouchableOpacity
+                onPress={() => {
+                  setTeacherAuthMode('login');
+                  setAuthError(null);
+                  setAuthSuccess(null);
+                }}
+                style={[styles.subTab, teacherAuthMode === 'login' && styles.subTabActive]}
+              >
+                <KeyRound size={ICON_SIZES.sm} color={teacherAuthMode === 'login' ? COLORS.purple : COLORS.gray600} />
+                <Text style={[styles.subTabText, teacherAuthMode === 'login' && styles.subTabTextActive]}>
+                  Đăng Nhập
+                </Text>
+              </TouchableOpacity>
 
-            <Text style={styles.inputLabel}>Mật Khẩu / Mã OTP Auth</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="••••••••"
-              placeholderTextColor={COLORS.gray400}
-              secureTextEntry
-              value="123456"
-            />
+              <TouchableOpacity
+                onPress={() => {
+                  setTeacherAuthMode('register');
+                  setAuthError(null);
+                  setAuthSuccess(null);
+                }}
+                style={[styles.subTab, teacherAuthMode === 'register' && styles.subTabActive]}
+              >
+                <UserPlus size={ICON_SIZES.sm} color={teacherAuthMode === 'register' ? COLORS.purple : COLORS.gray600} />
+                <Text style={[styles.subTabText, teacherAuthMode === 'register' && styles.subTabTextActive]}>
+                  Tạo Tài Khoản Mới
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            <Button
-              label="Đăng Nhập Quản Lý Lớp"
-              icon={KeyRound}
-              variant="secondary"
-              onPress={handleTeacherJoin}
-              style={styles.submitBtn}
-            />
+            {/* Status Feedback Banners */}
+            {authError && (
+              <View style={styles.errorBox}>
+                <AlertCircle size={ICON_SIZES.sm} color={COLORS.danger} />
+                <Text style={styles.errorText}>{authError}</Text>
+              </View>
+            )}
+
+            {authSuccess && (
+              <View style={styles.successBox}>
+                <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
+                <Text style={styles.successText}>{authSuccess}</Text>
+              </View>
+            )}
+
+            {teacherAuthMode === 'login' ? (
+              <>
+                <Text style={styles.inputLabel}>Email Giáo Viên</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="nhap.email@truonghoc.edu.vn"
+                  placeholderTextColor={COLORS.gray400}
+                  value={loginEmail}
+                  onChangeText={setLoginEmail}
+                />
+
+                <Text style={styles.inputLabel}>Mật Khẩu</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="••••••••"
+                  placeholderTextColor={COLORS.gray400}
+                  secureTextEntry
+                  value={loginPassword}
+                  onChangeText={setLoginPassword}
+                />
+
+                <Button
+                  label="Đăng Nhập Quản Lý Lớp"
+                  icon={KeyRound}
+                  variant="secondary"
+                  onPress={handleTeacherLogin}
+                  style={styles.submitBtn}
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.inputLabel}>Họ và Tên Giáo Viên</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="VD: Cô Nông Thị Tuyết"
+                  placeholderTextColor={COLORS.gray400}
+                  value={regFullName}
+                  onChangeText={setRegFullName}
+                />
+
+                <Text style={styles.inputLabel}>Email Đăng Ký</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="email.giao.vien@gmail.com"
+                  placeholderTextColor={COLORS.gray400}
+                  value={regEmail}
+                  onChangeText={setRegEmail}
+                />
+
+                <Text style={styles.inputLabel}>Mật Khẩu</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Nhập mật khẩu..."
+                  placeholderTextColor={COLORS.gray400}
+                  secureTextEntry
+                  value={regPassword}
+                  onChangeText={setRegPassword}
+                />
+
+                <Text style={styles.inputLabel}>Xác Nhận Mật Khẩu</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Nhập lại mật khẩu..."
+                  placeholderTextColor={COLORS.gray400}
+                  secureTextEntry
+                  value={regConfirmPassword}
+                  onChangeText={setRegConfirmPassword}
+                />
+
+                <Button
+                  label="Đăng Ký Tài Khoản Giáo Viên"
+                  icon={UserPlus}
+                  variant="secondary"
+                  onPress={handleTeacherRegister}
+                  style={styles.submitBtn}
+                />
+              </>
+            )}
           </View>
         )}
       </View>
@@ -225,6 +397,40 @@ const styles = StyleSheet.create({
   roleTabTextActive: {
     color: COLORS.white,
   },
+  subAuthToggle: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.gray100,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 16,
+    gap: 6,
+  },
+  subTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  subTabActive: {
+    backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  subTabText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.gray600,
+  },
+  subTabTextActive: {
+    color: COLORS.purple,
+    fontWeight: '800',
+  },
   formContent: {
     gap: 12,
   },
@@ -247,5 +453,33 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     marginTop: 16,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFE4E6',
+    borderRadius: 12,
+    padding: 12,
+  },
+  errorText: {
+    color: COLORS.danger,
+    fontSize: 14,
+    fontWeight: '700',
+    flex: 1,
+  },
+  successBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 12,
+    padding: 12,
+  },
+  successText: {
+    color: COLORS.success,
+    fontSize: 14,
+    fontWeight: '800',
+    flex: 1,
   },
 });

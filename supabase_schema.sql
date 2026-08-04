@@ -1,6 +1,6 @@
 -- ==========================================
 -- SUPABASE SQL DATABASE SCHEMA & SECURITY POLICIES
--- Interactive Kid Classroom Web Application (Version 4.0)
+-- Interactive Kid Classroom Web Application (Version 5.1)
 -- ==========================================
 
 -- 0. Enable UUID extension
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Students Account Table (Version 4.0: Username & Password Auth)
+-- 2. Students Account Table (Version 5.1: Username & Password Auth)
 CREATE TABLE IF NOT EXISTS public.students (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     teacher_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.students (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Classrooms / Schedules Table (Version 4.0 Schema)
+-- 3. Classrooms / Schedules Table (Version 5.1 Schema)
 CREATE TABLE IF NOT EXISTS public.classrooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(255) NOT NULL,
@@ -54,7 +54,15 @@ ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classrooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classroom_students ENABLE ROW LEVEL SECURITY;
 
--- 6. RLS Policies
+-- 6. RLS Policies (Version 5.1 Hardened)
+CREATE POLICY "Allow public login query on students" 
+ON public.students FOR SELECT 
+USING (true);
+
+CREATE POLICY "Allow public manage students" 
+ON public.students FOR ALL 
+USING (true);
+
 CREATE POLICY "Allow public read classrooms by room_code" 
 ON public.classrooms FOR SELECT USING (true);
 
@@ -66,12 +74,6 @@ ON public.classrooms FOR UPDATE USING (true);
 
 CREATE POLICY "Allow public delete classrooms" 
 ON public.classrooms FOR DELETE USING (true);
-
-CREATE POLICY "Allow public read students" 
-ON public.students FOR SELECT USING (true);
-
-CREATE POLICY "Allow public manage students" 
-ON public.students FOR ALL USING (true);
 
 CREATE POLICY "Allow public read classroom_students" 
 ON public.classroom_students FOR SELECT USING (true);

@@ -17,7 +17,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   // Student Credentials State
   const [studentUsername, setStudentUsername] = useState<string>('hocsinhan');
   const [studentPassword, setStudentPassword] = useState<string>('123456');
-  const [rememberMe, setRememberMe] = useState<boolean>(true);
+  const [rememberStudent, setRememberStudent] = useState<boolean>(true);
 
   // Teacher Auth Mode State: 'login' | 'register'
   const [teacherAuthMode, setTeacherAuthMode] = useState<'login' | 'register'>('login');
@@ -25,6 +25,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   // Teacher Form State
   const [loginEmail, setLoginEmail] = useState<string>('teacher@kidclass.edu.vn');
   const [loginPassword, setLoginPassword] = useState<string>('123456');
+  const [rememberTeacher, setRememberTeacher] = useState<boolean>(true);
 
   // Teacher Registration Form State
   const [regFullName, setRegFullName] = useState<string>('');
@@ -198,12 +199,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
               onSubmitEditing={handleStudentLoginSubmit}
             />
 
-            {/* Version 5.0: Checkbox Ghi nhớ tài khoản tự động */}
             <TouchableOpacity
-              onPress={() => setRememberMe(!rememberMe)}
+              onPress={() => setRememberStudent(!rememberStudent)}
               style={styles.checkboxRow}
             >
-              {rememberMe ? (
+              {rememberStudent ? (
                 <CheckSquare size={20} color={COLORS.primary} />
               ) : (
                 <Square size={20} color={COLORS.gray400} />
@@ -272,6 +272,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
                   value={loginPassword}
                   onChangeText={setLoginPassword}
                 />
+
+                {/* Version 5.1: Teacher Auto-Login Checkbox */}
+                <TouchableOpacity
+                  onPress={() => setRememberTeacher(!rememberTeacher)}
+                  style={styles.checkboxRow}
+                >
+                  {rememberTeacher ? (
+                    <CheckSquare size={20} color={COLORS.purple} />
+                  ) : (
+                    <Square size={20} color={COLORS.gray400} />
+                  )}
+                  <Text style={styles.checkboxText}>Ghi nhớ đăng nhập trên thiết bị này</Text>
+                </TouchableOpacity>
 
                 <Button
                   label="Đăng Nhập Quản Lý Lớp"

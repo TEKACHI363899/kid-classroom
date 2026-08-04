@@ -12,24 +12,29 @@ const STORAGE_KEYS = {
   TEACHERS: 'kid_classroom_teachers',
   STUDENTS: 'kid_classroom_students',
   CLASSROOMS: 'kid_classroom_rooms',
-  AUTH_SESSION: 'student_auth_session',
+  STUDENT_AUTH_SESSION: 'student_auth_session',
+  TEACHER_AUTH_SESSION: 'teacher_auth_session',
 };
 
 const isWindowAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 };
 
-// Version 5.0: Persistent Auth Session Management
+// Version 5.1: Persistent Auth Session Management for both Teacher & Student
 export const saveAuthSession = (user: UserProfile): void => {
   if (!isWindowAvailable()) return;
   try {
     const session: AuthSession = {
-      token: `token-${user.id}-${Date.now()}`,
+      token: `${user.role}_${user.id}_${Date.now()}`,
       userRole: user.role,
       profile: user,
       createdAt: new Date().toISOString(),
     };
-    localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify(session));
+
+    // Save under role-specific and primary session keys
+    const key = user.role === 'teacher' ? STORAGE_KEYS.TEACHER_AUTH_SESSION : STORAGE_KEYS.STUDENT_AUTH_SESSION;
+    localStorage.setItem(key, JSON.stringify(session));
+    localStorage.setItem(STORAGE_KEYS.STUDENT_AUTH_SESSION, JSON.stringify(session));
   } catch (error) {
     console.error('Failed to save auth session:', error);
   }
@@ -38,8 +43,13 @@ export const saveAuthSession = (user: UserProfile): void => {
 export const getStoredAuthSession = (): AuthSession | null => {
   if (!isWindowAvailable()) return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
-    return raw ? JSON.parse(raw) : null;
+    const teacherRaw = localStorage.getItem(STORAGE_KEYS.TEACHER_AUTH_SESSION);
+    if (teacherRaw) return JSON.parse(teacherRaw);
+
+    const studentRaw = localStorage.getItem(STORAGE_KEYS.STUDENT_AUTH_SESSION);
+    if (studentRaw) return JSON.parse(studentRaw);
+
+    return null;
   } catch (error) {
     console.error('Failed to read auth session:', error);
     return null;
@@ -49,7 +59,8 @@ export const getStoredAuthSession = (): AuthSession | null => {
 export const clearAuthSession = (): void => {
   if (!isWindowAvailable()) return;
   try {
-    localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+    localStorage.removeItem(STORAGE_KEYS.STUDENT_AUTH_SESSION);
+    localStorage.removeItem(STORAGE_KEYS.TEACHER_AUTH_SESSION);
   } catch (error) {
     console.error('Failed to clear auth session:', error);
   }
@@ -254,21 +265,24 @@ export const registerStudentAccount = (
   };
 };
 
-export const loginStudent = (username: string, passwordText: string): AuthResponse => {
-  const cleanUsername = username.trim().toLowerCase();
-  const cleanPassword = passwordText.trim();
+// Version 5.1: Student Login with String Normalization & Specific Error Messages
+export const loginStudent = (usernameInput: string, passwordInput: string): AuthResponse => {
+  const cleanUsername = usernameInput.trim().toLowerCase();
+  const cleanPassword = passwordInput.trim();
 
   if (!cleanUsername || !cleanPassword) {
     return { success: false, message: 'Vui lòng nhập Tên Đăng Nhập và Mật Khẩu.' };
   }
 
   const allStudents = getTeacherStudents();
-  const student = allStudents.find(
-    (s) => s.username.toLowerCase() === cleanUsername && s.passwordText === cleanPassword
-  );
+  const student = allStudents.find((s) => s.username.trim().toLowerCase() === cleanUsername);
 
   if (!student) {
-    return { success: false, message: 'Tên đăng nhập hoặc mật khẩu không chính xác.' };
+    return { success: false, message: 'Tài khoản không tồn tại. Vui lòng kiểm tra lại Tên đăng nhập!' };
+  }
+
+  if (student.passwordText.trim() !== cleanPassword) {
+    return { success: false, message: 'Mật khẩu không chính xác!' };
   }
 
   const userProfile: UserProfile = {

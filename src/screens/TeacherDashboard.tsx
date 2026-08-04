@@ -23,12 +23,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
   const [students, setStudents] = useState<StudentAccount[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
 
-  // Add Student Modal State (3 fields: fullName, username, passwordText)
+  // Add Student Modal State
   const [addStudentVisible, setAddStudentVisible] = useState<boolean>(false);
   const [newStudentFullName, setNewStudentFullName] = useState<string>('');
   const [newStudentUsername, setNewStudentUsername] = useState<string>('');
   const [newStudentPassword, setNewStudentPassword] = useState<string>('');
   const [addStudentError, setAddStudentError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
 
   // Show/Hide Password State per student ID
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
@@ -44,28 +45,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
     setStudents(getTeacherStudents());
   }, []);
 
-  const handleAddStudentSubmit = () => {
+  const handleAddStudentSubmit = async () => {
     setAddStudentError(null);
     if (!newStudentFullName.trim() || !newStudentUsername.trim() || !newStudentPassword.trim()) {
       setAddStudentError('Vui lòng nhập đủ Họ Tên, Tên Đăng Nhập và Mật Khẩu.');
       return;
     }
 
-    const res = registerStudentAccount(
-      'tch-101',
-      newStudentFullName,
-      newStudentUsername,
-      newStudentPassword
-    );
+    setLoading(true);
+    try {
+      const res = await registerStudentAccount(
+        'tch-101',
+        newStudentFullName,
+        newStudentUsername,
+        newStudentPassword
+      );
 
-    if (res.success) {
-      setStudents(getTeacherStudents());
-      setNewStudentFullName('');
-      setNewStudentUsername('');
-      setNewStudentPassword('');
-      setAddStudentVisible(false);
-    } else {
-      setAddStudentError(res.message);
+      if (res.success) {
+        setStudents(getTeacherStudents());
+        setNewStudentFullName('');
+        setNewStudentUsername('');
+        setNewStudentPassword('');
+        setAddStudentVisible(false);
+      } else {
+        setAddStudentError(res.message);
+      }
+    } catch (err) {
+      setAddStudentError('Tạo tài khoản thất bại. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -300,13 +308,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onStartRoom 
         </View>
       </View>
 
-      {/* Version 4.0: Modal Add Student with Username & Password */}
+      {/* Modal Add Student */}
       <Modal
         visible={addStudentVisible}
         onClose={() => setAddStudentVisible(false)}
         title="Thêm Học Sinh Mới"
         description="Khởi tạo Tên Đăng Nhập và Mật Khẩu để gửi cho Học sinh / Phụ huynh."
-        confirmLabel="Tạo Tài Khoản"
+        confirmLabel={loading ? 'Đang Tạo...' : 'Tạo Tài Khoản'}
         confirmVariant="primary"
         onConfirm={handleAddStudentSubmit}
         cancelLabel="Hủy"

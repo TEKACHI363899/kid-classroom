@@ -36,6 +36,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   // Auth Status Message
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -47,46 +48,47 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
     }
   }, []);
 
-  const handleStudentLoginSubmit = () => {
+  const handleStudentLoginSubmit = async () => {
     setAuthError(null);
     setAuthSuccess(null);
+    setLoading(true);
 
-    const res = loginStudent(studentUsername, studentPassword);
-    if (res.success && res.user) {
-      setAuthSuccess(res.message);
-      setTimeout(() => onLogin(res.user!, roomCode), 500);
-      return;
+    try {
+      const res = await loginStudent(studentUsername, studentPassword);
+      if (res.success && res.user) {
+        setAuthSuccess(res.message);
+        setTimeout(() => onLogin(res.user!, roomCode), 400);
+        return;
+      }
+      setAuthError(res.message);
+    } catch (err) {
+      setAuthError('Đăng nhập thất bại. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
     }
-
-    setAuthError(res.message);
   };
 
-  const handleTeacherLogin = () => {
+  const handleTeacherLogin = async () => {
     setAuthError(null);
     setAuthSuccess(null);
+    setLoading(true);
 
-    const res = loginTeacher(loginEmail, loginPassword);
-    if (res.success && res.user) {
-      setAuthSuccess(res.message);
-      setTimeout(() => onLogin(res.user!, roomCode), 500);
-      return;
+    try {
+      const res = await loginTeacher(loginEmail, loginPassword);
+      if (res.success && res.user) {
+        setAuthSuccess(res.message);
+        setTimeout(() => onLogin(res.user!, roomCode), 400);
+        return;
+      }
+      setAuthError(res.message);
+    } catch (err) {
+      setAuthError('Đăng nhập thất bại. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
     }
-
-    if (loginEmail === 'teacher@kidclass.edu.vn' || !loginEmail.trim()) {
-      const demoUser: UserProfile = {
-        id: 'tch-101',
-        fullName: 'Cô Nông Thị Tuyết',
-        role: 'teacher',
-        email: 'teacher@kidclass.edu.vn',
-      };
-      onLogin(demoUser, roomCode);
-      return;
-    }
-
-    setAuthError(res.message);
   };
 
-  const handleTeacherRegister = () => {
+  const handleTeacherRegister = async () => {
     setAuthError(null);
     setAuthSuccess(null);
 
@@ -107,12 +109,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
       return;
     }
 
-    const res = registerTeacher(regFullName, regEmail, regPassword);
-    if (res.success && res.user) {
-      setAuthSuccess(res.message);
-      setTimeout(() => onLogin(res.user!, roomCode), 700);
-    } else {
-      setAuthError(res.message);
+    setLoading(true);
+    try {
+      const res = await registerTeacher(regFullName, regEmail, regPassword);
+      if (res.success && res.user) {
+        setAuthSuccess(res.message);
+        setTimeout(() => onLogin(res.user!, roomCode), 600);
+      } else {
+        setAuthError(res.message);
+      }
+    } catch (err) {
+      setAuthError('Đăng ký thất bại. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -212,9 +221,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
             </TouchableOpacity>
 
             <Button
-              label="Đăng Nhập Về Dashboard"
+              label={loading ? 'Đang Kiểm Tra...' : 'Đăng Nhập Về Dashboard'}
               icon={LogIn}
               variant="success"
+              disabled={loading}
               onPress={handleStudentLoginSubmit}
               style={styles.submitBtn}
             />
@@ -273,7 +283,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
                   onChangeText={setLoginPassword}
                 />
 
-                {/* Version 5.1: Teacher Auto-Login Checkbox */}
                 <TouchableOpacity
                   onPress={() => setRememberTeacher(!rememberTeacher)}
                   style={styles.checkboxRow}
@@ -287,9 +296,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
                 </TouchableOpacity>
 
                 <Button
-                  label="Đăng Nhập Quản Lý Lớp"
+                  label={loading ? 'Đang Đăng Nhập...' : 'Đăng Nhập Quản Lý Lớp'}
                   icon={KeyRound}
                   variant="secondary"
+                  disabled={loading}
                   onPress={handleTeacherLogin}
                   style={styles.submitBtn}
                 />
@@ -335,9 +345,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
                 />
 
                 <Button
-                  label="Đăng Ký Tài Khoản Giáo Viên"
+                  label={loading ? 'Đang Đăng Ký...' : 'Đăng Ký Tài Khoản Giáo Viên'}
                   icon={UserPlus}
                   variant="secondary"
+                  disabled={loading}
                   onPress={handleTeacherRegister}
                   style={styles.submitBtn}
                 />

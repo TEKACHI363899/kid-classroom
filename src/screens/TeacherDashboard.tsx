@@ -153,7 +153,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
                   <TouchableOpacity
                     onPress={() => handleDeleteStudentItem(std.id)}
                     style={styles.deleteBtn}
-                    title="Xóa học sinh"
+                    accessibilityLabel="Xóa học sinh"
                   >
                     <Trash2 size={ICON_SIZES.sm} color={COLORS.danger} />
                   </TouchableOpacity>

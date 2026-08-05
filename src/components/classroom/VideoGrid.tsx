@@ -228,19 +228,19 @@ const ParticipantCard: React.FC<{
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (videoRef.current && p.stream && p.isCamOn) {
+    if (videoRef.current && p.stream && p.isCamOn && !p.isScreenSharing) {
       if (videoRef.current.srcObject !== p.stream) {
         videoRef.current.srcObject = p.stream;
         videoRef.current.play().catch((e) => console.warn('Video play warning', e));
       }
     }
-  }, [p.stream, p.isCamOn]);
+  }, [p.stream, p.isCamOn, p.isScreenSharing]);
 
   return (
     <View style={styles.participantCard}>
       <View style={styles.participantAvatarArea}>
         {/* Version 4.0: Mobile-safe Video Feed with autoPlay playsInline muted */}
-        {p.isCamOn && p.stream ? (
+        {p.isCamOn && p.stream && !p.isScreenSharing ? (
           <div style={{ width: 64, height: 64, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' }}>
             <video
               ref={videoRef}

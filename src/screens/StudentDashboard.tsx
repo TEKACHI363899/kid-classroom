@@ -4,7 +4,7 @@ import { Video, Calendar, Sparkles, Smile } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserProfile, Classroom } from '../types';
 import { Button } from '../components/common/Button';
-import { getTeacherClassrooms } from '../services/storageService';
+import { fetchClassroomsFromSupabase, formatScheduledTime } from '../services/storageService';
 
 export interface StudentDashboardProps {
   user: UserProfile;
@@ -15,7 +15,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoin
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
 
   useEffect(() => {
-    setClassrooms(getTeacherClassrooms());
+    fetchClassroomsFromSupabase().then((data) => {
+      setClassrooms(data);
+    });
   }, []);
 
   const liveClass = classrooms.find((c) => c.status === 'live' || c.isActive);
@@ -46,6 +48,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoin
 
             <Text style={styles.featuredTitle}>{liveClass.title}</Text>
             <Text style={styles.featuredTeacher}>Giáo viên: Thầy Ngô Thành Đạt</Text>
+            <Text style={styles.featuredTeacher}>Lịch học: {formatScheduledTime(liveClass.scheduledStart)}</Text>
 
             <Button
               label="VÀO LỚP NGAY TẠI ĐÂY"
@@ -91,6 +94,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoin
                         <Text style={[styles.statusText, { color: statusCol }]}>{statusLabel}</Text>
                       </View>
                     </View>
+                    <Text style={styles.classCode}>Lịch học: {formatScheduledTime(cls.scheduledStart)}</Text>
                     <Text style={styles.classCode}>Mã Phòng: {cls.roomCode}</Text>
                   </View>
                 </View>

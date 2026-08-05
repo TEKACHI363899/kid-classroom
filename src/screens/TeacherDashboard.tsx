@@ -6,7 +6,8 @@ import type { StudentAccount, Classroom, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import {
-  getTeacherClassrooms,
+  fetchClassroomsFromSupabase,
+  formatScheduledTime,
   saveTeacherClassroom,
   updateClassroomStatus,
   deleteTeacherClassroom,
@@ -38,13 +39,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   // Schedule Modal
   const [addScheduleVisible, setAddScheduleVisible] = useState<boolean>(false);
   const [newTitle, setNewTitle] = useState<string>('');
+  const [newStartTime, setNewStartTime] = useState<string>(() => {
+    const now = new Date();
+    const tzOffset = now.getTimezoneOffset() * 60000;
+    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+  });
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const activeTeacherId = user?.id || 'tch-101';
 
   useEffect(() => {
-    setClassrooms(getTeacherClassrooms(activeTeacherId));
+    fetchClassroomsFromSupabase(activeTeacherId).then((data) => {
+      setClassrooms(data);
+    });
     setStudents(getTeacherStudents(activeTeacherId));
   }, [activeTeacherId]);
 
@@ -101,38 +109,45 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   };
 
   const handleAddSchedule = () => {
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim() || !newStartTime) return;
     const roomCode = `ROOM${Math.floor(100 + Math.random() * 900)}`;
+    const startDate = new Date(newStartTime);
+    const endDate = new Date(startDate.getTime() + 3600000); // 1 hour duration
+
     const newClassroom: Classroom = {
       id: `cls-${Date.now()}`,
       title: newTitle.trim(),
-      teacherId: 'tch-101',
-      scheduledStart: new Date().toISOString(),
-      scheduledEnd: new Date(Date.now() + 3600000).toISOString(),
+      teacherId: activeTeacherId,
+      scheduledStart: startDate.toISOString(),
+      scheduledEnd: endDate.toISOString(),
       roomCode,
       status: 'scheduled',
       isActive: false,
     };
-    const updated = saveTeacherClassroom(newClassroom);
-    setClassrooms(updated);
-    setNewTitle('');
-    setAddScheduleVisible(false);
+    saveTeacherClassroom(newClassroom).then((updated) => {
+      setClassrooms(updated);
+      setNewTitle('');
+      setAddScheduleVisible(false);
+    });
   };
 
   const handleOpenRoom = (cls: Classroom) => {
-    const updated = updateClassroomStatus(cls.id, 'live');
-    setClassrooms(updated);
-    onStartRoom(cls.roomCode, cls.title);
+    updateClassroomStatus(cls.id, 'live').then((updated) => {
+      setClassrooms(updated);
+      onStartRoom(cls.roomCode, cls.title);
+    });
   };
 
   const handleEndClassroom = (classroomId: string) => {
-    const updated = updateClassroomStatus(classroomId, 'ended');
-    setClassrooms(updated);
+    updateClassroomStatus(classroomId, 'ended').then((updated) => {
+      setClassrooms(updated);
+    });
   };
 
   const handleDeleteClassroom = (classroomId: string) => {
-    const updated = deleteTeacherClassroom(classroomId);
-    setClassrooms(updated);
+    deleteTeacherClassroom(classroomId).then((updated) => {
+      setClassrooms(updated);
+    });
   };
 
   return (
@@ -275,6 +290,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
                       </Text>
                     </View>
                   </View>
+                  <Text style={styles.clsTime}>Lịch dạy: {formatScheduledTime(cls.scheduledStart)}</Text>
                   <Text style={styles.clsTime}>Mã Phòng: {cls.roomCode}</Text>
                 </View>
 
@@ -362,7 +378,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
         visible={addScheduleVisible}
         onClose={() => setAddScheduleVisible(false)}
         title="Tạo Lịch Học Mới"
-        description="Nhập tên bài học để sinh phòng dạy trực tuyến."
+        description="Nhập tên bài học và chọn thời gian bắt đầu học."
         confirmLabel="Lưu Lịch Dạy"
         confirmVariant="secondary"
         onConfirm={handleAddSchedule}
@@ -374,6 +390,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
           placeholderTextColor={COLORS.gray400}
           value={newTitle}
           onChangeText={setNewTitle}
+        />
+        <input
+          type="datetime-local"
+          value={newStartTime}
+          onChange={(e) => setNewStartTime(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '12px',
+            border: '2px solid #E2E8F0',
+            borderRadius: '12px',
+            fontSize: '15px',
+            fontWeight: '600',
+            color: '#1E293B',
+            marginTop: '12px',
+            boxSizing: 'border-box'
+          }}
         />
       </Modal>
     </ScrollView>

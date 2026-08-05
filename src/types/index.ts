@@ -61,6 +61,7 @@ export interface Participant {
   isMicOn: boolean;
   canDraw: boolean;
   stream?: MediaStream;
+  isScreenSharing?: boolean;
 }
 
 export interface FloatingTextInputState {

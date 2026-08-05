@@ -585,12 +585,72 @@ export const getTeacherClassrooms = (teacherId?: string): Classroom[] => {
   }
 };
 
+export const fetchClassroomsFromSupabase = async (teacherId?: string): Promise<Classroom[]> => {
+  if (!isSupabaseConfigured()) {
+    return getTeacherClassrooms(teacherId);
+  }
+  try {
+    let query = supabase.from('classrooms').select('*').eq('is_active', true);
+    if (teacherId) {
+      query = query.eq('teacher_id', teacherId);
+    }
+    const res = await withTimeout(query, 6000);
+    if (res && res.error) {
+      console.error('Error fetching classrooms from Supabase:', res.error);
+      return getTeacherClassrooms(teacherId);
+    }
+    if (res && res.data) {
+      const mapped: Classroom[] = res.data.map((r) => ({
+        id: r.id,
+        title: r.title,
+        teacherId: r.teacher_id,
+        roomCode: r.room_code,
+        scheduledStart: r.scheduled_start,
+        scheduledEnd: r.scheduled_end,
+        status: r.status as ClassroomStatus,
+        isActive: r.status === 'live',
+      }));
+      if (isWindowAvailable()) {
+        localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(mapped));
+      }
+      return mapped;
+    }
+  } catch (err) {
+    console.error('Exception fetching classrooms from Supabase:', err);
+  }
+  return getTeacherClassrooms(teacherId);
+};
+
+export const formatScheduledTime = (isoString: string): string => {
+  try {
+    const date = new Date(isoString);
+    const weekdays = [
+      'Chủ Nhật',
+      'Thứ Hai',
+      'Thứ Ba',
+      'Thứ Tư',
+      'Thứ Năm',
+      'Thứ Sáu',
+      'Thứ Bảy'
+    ];
+    const dayOfWeek = weekdays[date.getDay()];
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    
+    return `${dayOfWeek}, ${day}/${month} lúc ${hours}:${minutes}`;
+  } catch (e) {
+    return 'Chưa rõ lịch';
+  }
+};
+
 export const getClassroomByCode = (roomCode: string): Classroom | null => {
   const allRooms = getTeacherClassrooms();
   return allRooms.find((r) => r.roomCode.toLowerCase() === roomCode.toLowerCase()) || null;
 };
 
-export const saveTeacherClassroom = (classroom: Classroom): Classroom[] => {
+export const saveTeacherClassroom = async (classroom: Classroom): Promise<Classroom[]> => {
   const allRooms = getTeacherClassrooms();
   const updated = [classroom, ...allRooms.filter((r) => r.id !== classroom.id)];
   if (isWindowAvailable()) {
@@ -600,10 +660,31 @@ export const saveTeacherClassroom = (classroom: Classroom): Classroom[] => {
       console.error('Failed to save classroom:', error);
     }
   }
+
+  if (isSupabaseConfigured()) {
+    try {
+      await withTimeout(
+        supabase.from('classrooms').upsert({
+          id: classroom.id,
+          title: classroom.title,
+          teacher_id: classroom.teacherId,
+          room_code: classroom.roomCode,
+          scheduled_start: classroom.scheduledStart,
+          scheduled_end: classroom.scheduledEnd,
+          status: classroom.status,
+          is_active: classroom.isActive !== false,
+        }),
+        6000
+      );
+    } catch (err) {
+      console.warn('Failed to upsert classroom to Supabase:', err);
+    }
+  }
+
   return updated;
 };
 
-export const updateClassroomStatus = (classroomId: string, status: ClassroomStatus): Classroom[] => {
+export const updateClassroomStatus = async (classroomId: string, status: ClassroomStatus): Promise<Classroom[]> => {
   const allRooms = getTeacherClassrooms();
   const updated = allRooms.map((r) =>
     r.id === classroomId ? { ...r, status, isActive: status === 'live' } : r
@@ -615,10 +696,25 @@ export const updateClassroomStatus = (classroomId: string, status: ClassroomStat
       console.error('Failed to update classroom status:', error);
     }
   }
+
+  if (isSupabaseConfigured()) {
+    try {
+      await withTimeout(
+        supabase.from('classrooms').update({
+          status: status,
+          is_active: status !== 'ended',
+        }).eq('id', classroomId),
+        6000
+      );
+    } catch (err) {
+      console.warn('Failed to update classroom status in Supabase:', err);
+    }
+  }
+
   return updated;
 };
 
-export const endClassroomByCode = (roomCode: string): Classroom[] => {
+export const endClassroomByCode = async (roomCode: string): Promise<Classroom[]> => {
   const allRooms = getTeacherClassrooms();
   const updated = allRooms.map((r) =>
     r.roomCode.toLowerCase() === roomCode.toLowerCase()
@@ -632,10 +728,25 @@ export const endClassroomByCode = (roomCode: string): Classroom[] => {
       console.error('Failed to end classroom:', error);
     }
   }
+
+  if (isSupabaseConfigured()) {
+    try {
+      await withTimeout(
+        supabase.from('classrooms').update({
+          status: 'ended',
+          is_active: false,
+        }).eq('room_code', roomCode),
+        6000
+      );
+    } catch (err) {
+      console.warn('Failed to end classroom in Supabase:', err);
+    }
+  }
+
   return updated;
 };
 
-export const deleteTeacherClassroom = (classroomId: string, teacherId?: string): Classroom[] => {
+export const deleteTeacherClassroom = async (classroomId: string, teacherId?: string): Promise<Classroom[]> => {
   const allRooms = getTeacherClassrooms();
   const updated = allRooms.filter((r) => r.id !== classroomId);
   if (isWindowAvailable()) {
@@ -645,5 +756,17 @@ export const deleteTeacherClassroom = (classroomId: string, teacherId?: string):
       console.error('Failed to delete classroom:', error);
     }
   }
+
+  if (isSupabaseConfigured()) {
+    try {
+      await withTimeout(
+        supabase.from('classrooms').delete().eq('id', classroomId),
+        6000
+      );
+    } catch (err) {
+      console.warn('Failed to delete classroom in Supabase:', err);
+    }
+  }
+
   return teacherId ? updated.filter((r) => r.teacherId === teacherId) : updated;
 };

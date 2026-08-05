@@ -263,7 +263,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               role: payload.role,
               isMicOn: payload.isMicOn,
               isCamOn: payload.isCamOn,
-              isScreenSharing: false,
+              isScreenSharing: payload.isScreenSharing || false,
               canDraw:
                 payload.role === 'teacher'
                   ? true
@@ -287,6 +287,15 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           )
         );
       })
+      .on('broadcast', { event: 'SCREEN_SHARE_STATE' }, ({ payload }) => {
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.role === 'teacher'
+              ? { ...p, isScreenSharing: payload.isSharing }
+              : p
+          )
+        );
+      })
       .on('broadcast', { event: 'PEER_LEAVE' }, ({ payload }) => {
         setParticipants((prev) => prev.filter((p) => p.id !== payload.connectionId));
       })
@@ -303,6 +312,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           connectionId: peerService.getConnectionId,
           isMicOn,
           isCamOn,
+          isScreenSharing,
         },
       });
     };
@@ -321,7 +331,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       clearInterval(interval);
       supabase.removeChannel(channel);
     };
-  }, [waitingStatus, roomCode, currentUser, isMicOn, isCamOn, permissionState]);
+  }, [waitingStatus, roomCode, currentUser, isMicOn, isCamOn, isScreenSharing, permissionState]);
 
   const handleToggleMic = () => {
     const nextState = !isMicOn;
@@ -369,11 +379,55 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       if (stream) {
         setScreenStream(stream);
         setIsScreenSharing(true);
+
+        // Replace video track in existing calls with the screen video track
+        const screenTrack = stream.getVideoTracks()[0];
+        peerService.replaceVideoTrack(screenTrack);
+
+        // Set screen sharing status locally
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: true } : p))
+        );
+
+        // Broadcast to other peers
+        const channelName = `room_status_${roomCode}`;
+        const channel = supabase.channel(channelName);
+        channel.send({
+          type: 'broadcast',
+          event: 'SCREEN_SHARE_STATE',
+          payload: {
+            userId: currentUser.id,
+            isSharing: true,
+          },
+        });
       }
     } else {
       peerService.stopScreenShare();
       setScreenStream(null);
       setIsScreenSharing(false);
+
+      // Restore camera stream using active preferences
+      const originalStream = await peerService.startLocalMedia(isMicOn, isCamOn);
+      if (originalStream) {
+        peerService.toggleAudio(isMicOn);
+        peerService.toggleVideo(isCamOn);
+      }
+
+      setParticipants((prev) =>
+        prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: false } : p))
+      );
+
+      // Broadcast to other peers
+      const channelName = `room_status_${roomCode}`;
+      const channel = supabase.channel(channelName);
+      channel.send({
+        type: 'broadcast',
+        event: 'SCREEN_SHARE_STATE',
+        payload: {
+          userId: currentUser.id,
+          isSharing: false,
+        },
+      });
     }
   };
 
@@ -493,7 +547,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               ? true
               : permissionState.globalCanDraw || permissionState.studentPermissions[p.id] === true,
         }))}
-        screenStream={screenStream}
+        screenStream={
+          isTeacher
+            ? screenStream
+            : participants.find((p) => p.role === 'teacher' && p.isScreenSharing)?.stream || null
+        }
         strokes={strokes}
         onAddStroke={addStroke}
         onRemoveStroke={removeStroke}

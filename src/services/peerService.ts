@@ -150,6 +150,15 @@ export class PeerService {
 
       this.screenStream = stream;
 
+      // Swap track in localStream so that new connections automatically receive the screen share track
+      if (this.localStream && stream.getVideoTracks().length > 0) {
+        const localVideoTrack = this.localStream.getVideoTracks()[0];
+        if (localVideoTrack) {
+          this.localStream.removeTrack(localVideoTrack);
+        }
+        this.localStream.addTrack(stream.getVideoTracks()[0]);
+      }
+
       stream.getVideoTracks()[0].onended = () => {
         this.stopScreenShare();
       };
@@ -159,6 +168,16 @@ export class PeerService {
       console.error('Error starting screen share:', error);
       return null;
     }
+  }
+
+  public replaceVideoTrack(track: MediaStreamTrack | null): void {
+    this.calls.forEach((call) => {
+      const senders = call.peerConnection.getSenders();
+      const videoSender = senders.find((s) => s.track?.kind === 'video');
+      if (videoSender) {
+        videoSender.replaceTrack(track);
+      }
+    });
   }
 
   public stopScreenShare(): void {

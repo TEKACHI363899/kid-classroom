@@ -216,28 +216,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           prev.map((p) => (p.id === peerId ? { ...p, stream } : p))
         );
       },
-      // Critical: This fires when teacher replaces their camera track with
-      // screen share track (or vice versa). PeerJS does NOT re-fire 'stream'
-      // on replaceTrack, but the browser does fire 'ontrack' on the
-      // RTCPeerConnection. We get a NEW MediaStream object here, which gives
-      // React a fresh reference to trigger re-render of the <video> element.
-      onRemoteTrackUpdated: (peerId, stream) => {
-        setParticipants((prev) => {
-          const updated = prev.map((p) => (p.id === peerId ? { ...p, stream } : p));
-
-          // If this is the teacher's track being updated while sharing, also
-          // set screenStream immediately. This handles the case where the
-          // SCREEN_SHARE_STATE broadcast arrived first (setting isScreenSharing)
-          // and now we're getting the actual updated track from WebRTC.
-          if (!isTeacher) {
-            const teacherP = updated.find((p) => p.id === peerId && p.role === 'teacher');
-            if (teacherP?.isScreenSharing) {
-              setScreenStream(stream);
-            }
-          }
-
-          return updated;
-        });
+      onRemoteScreenStream: (stream) => {
+        setScreenStream(stream);
+      },
+      onRemoteScreenStreamEnded: () => {
+        setScreenStream(null);
       },
       onPeerDisconnected: (peerId) => {
         setParticipants((prev) => prev.filter((p) => p.id !== peerId));
@@ -250,7 +233,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         }
       },
       onScreenShareStopped: () => {
-        // Teacher's screen share ended (via browser 'Stop sharing' button)
+        // Teacher's screen share ended
         setScreenStream(null);
         setIsScreenSharing(false);
         setParticipants((prev) =>
@@ -319,6 +302,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         if (peerService.getConnectionId < payload.connectionId) {
           peerService.callPeer(payload.connectionId);
         }
+
+        // If teacher is currently sharing screen, make dedicated screen call to new student
+        if (isTeacher && isScreenSharing) {
+          peerService.callScreenToPeer(payload.connectionId);
+        }
       })
       .on('broadcast', { event: 'PEER_UPDATE' }, ({ payload }) => {
         setParticipants((prev) =>
@@ -339,25 +327,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           )
         );
 
-        // For students: when teacher starts sharing, we need to set the
-        // screenStream. The teacher's participant already has a stream
-        // (from onRemoteTrackUpdated). When sharing stops, clear it.
-        if (!isTeacher) {
-          if (payload.isSharing) {
-            // Use a small delay to ensure onRemoteTrackUpdated has fired
-            // with the screen share track before we read the stream
-            setTimeout(() => {
-              setParticipants((current) => {
-                const teacher = current.find((p) => p.role === 'teacher');
-                if (teacher?.stream) {
-                  setScreenStream(teacher.stream);
-                }
-                return current;
-              });
-            }, 300);
-          } else {
-            setScreenStream(null);
-          }
+        if (!isTeacher && !payload.isSharing) {
+          setScreenStream(null);
         }
       })
       .on('broadcast', { event: 'PEER_LEAVE' }, ({ payload }) => {
@@ -439,7 +410,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     if (!isTeacher) return;
 
     if (!isScreenSharing) {
-      const stream = await peerService.startScreenShare();
+      const studentConnectionIds = participants
+        .filter((p) => p.role === 'student')
+        .map((p) => p.id);
+
+      const stream = await peerService.startScreenShare(studentConnectionIds);
       if (stream) {
         setScreenStream(stream);
         setIsScreenSharing(true);
@@ -462,9 +437,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         });
       }
     } else {
-      // stopScreenShare() already restores original camera track and
-      // fires onScreenShareStopped callback which handles cleanup +
-      // broadcasting SCREEN_SHARE_STATE with isSharing: false
       peerService.stopScreenShare();
     }
   };

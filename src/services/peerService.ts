@@ -5,7 +5,8 @@ import { WEBRTC_AUDIO_CONSTRAINTS } from '../constants';
 export interface PeerServiceEvents {
   onLocalStream?: (stream: MediaStream) => void;
   onRemoteStream?: (peerId: string, stream: MediaStream) => void;
-  onRemoteTrackUpdated?: (peerId: string, stream: MediaStream) => void;
+  onRemoteScreenStream?: (stream: MediaStream) => void;
+  onRemoteScreenStreamEnded?: () => void;
   onPeerDisconnected?: (peerId: string) => void;
   onDataReceived?: (data: unknown) => void;
   onConnectionStatusChange?: (status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'permission_denied') => void;
@@ -14,10 +15,11 @@ export interface PeerServiceEvents {
 
 export class PeerService {
   private peer: Peer | null = null;
+  private screenPeer: Peer | null = null;
   private localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
-  private originalVideoTrack: MediaStreamTrack | null = null;
   private calls: Map<string, MediaConnection> = new Map();
+  private screenCalls: Map<string, MediaConnection> = new Map();
   private dataConnections: Map<string, DataConnection> = new Map();
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
@@ -59,6 +61,20 @@ export class PeerService {
         });
 
         this.peer.on('call', (call) => {
+          if (call.peer.endsWith('_screen')) {
+            call.answer();
+            call.on('stream', (remoteScreenStream) => {
+              this.events.onRemoteScreenStream?.(remoteScreenStream);
+            });
+            call.on('close', () => {
+              this.events.onRemoteScreenStreamEnded?.();
+            });
+            call.on('error', () => {
+              this.events.onRemoteScreenStreamEnded?.();
+            });
+            return;
+          }
+
           if (this.localStream) {
             call.answer(this.localStream);
           } else {
@@ -140,7 +156,7 @@ export class PeerService {
     }
   }
 
-  public async startScreenShare(): Promise<MediaStream | null> {
+  public async startScreenShare(targetConnectionIds: string[] = []): Promise<MediaStream | null> {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         throw new Error('Screen sharing not supported on this browser');
@@ -152,22 +168,23 @@ export class PeerService {
       });
 
       this.screenStream = stream;
-      const screenVideoTrack = stream.getVideoTracks()[0];
 
-      // Save original camera track before swapping
-      if (this.localStream) {
-        this.originalVideoTrack = this.localStream.getVideoTracks()[0] || null;
-      }
+      const screenPeerId = `${this.activeConnectionId}_screen`;
+      this.screenPeer = new Peer(screenPeerId, {
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+          ],
+        },
+      });
 
-      // Replace the video track in ALL existing peer connections
-      this.calls.forEach((call) => {
-        const senders = call.peerConnection.getSenders();
-        const videoSender = senders.find((s) => s.track?.kind === 'video' || s.track === null);
-        if (videoSender) {
-          videoSender.replaceTrack(screenVideoTrack).catch((e) =>
-            console.warn('replaceTrack error:', e)
-          );
-        }
+      this.screenPeer.on('open', () => {
+        targetConnectionIds.forEach((targetId) => {
+          this.callScreenToPeer(targetId);
+        });
       });
 
       stream.getVideoTracks()[0].onended = () => {
@@ -181,16 +198,16 @@ export class PeerService {
     }
   }
 
-  public replaceVideoTrack(track: MediaStreamTrack | null): void {
-    this.calls.forEach((call) => {
-      const senders = call.peerConnection.getSenders();
-      const videoSender = senders.find((s) => s.track?.kind === 'video' || s.track === null);
-      if (videoSender) {
-        videoSender.replaceTrack(track).catch((e) =>
-          console.warn('replaceTrack error:', e)
-        );
+  public callScreenToPeer(targetConnectionId: string): void {
+    if (!this.screenPeer || !this.screenStream || this.screenPeer.destroyed) return;
+    try {
+      const screenCall = this.screenPeer.call(targetConnectionId, this.screenStream);
+      if (screenCall) {
+        this.screenCalls.set(targetConnectionId, screenCall);
       }
-    });
+    } catch (e) {
+      console.warn('Call screen to peer error:', e);
+    }
   }
 
   public stopScreenShare(): void {
@@ -199,10 +216,18 @@ export class PeerService {
       this.screenStream = null;
     }
 
-    // Restore original camera video track in existing peer connections
-    if (this.originalVideoTrack) {
-      this.replaceVideoTrack(this.originalVideoTrack);
-      this.originalVideoTrack = null;
+    this.screenCalls.forEach((call) => {
+      try {
+        call.close();
+      } catch (_) {}
+    });
+    this.screenCalls.clear();
+
+    if (this.screenPeer) {
+      try {
+        this.screenPeer.destroy();
+      } catch (_) {}
+      this.screenPeer = null;
     }
 
     this.events.onScreenShareStopped?.();
@@ -227,30 +252,6 @@ export class PeerService {
     call.on('stream', (remoteStream) => {
       this.events.onRemoteStream?.(call.peer, remoteStream);
     });
-
-    // Listen for track replacement events on the underlying RTCPeerConnection.
-    // When the remote peer calls replaceTrack() (e.g., switching from camera to
-    // screen share), PeerJS does NOT fire the 'stream' event again. The browser
-    // does fire 'track' on the RTCPeerConnection though. We create a NEW
-    // MediaStream from all current remote tracks so React gets a fresh object
-    // reference and re-renders the <video> element.
-    try {
-      const pc = call.peerConnection;
-      if (pc) {
-        pc.ontrack = (_event: RTCTrackEvent) => {
-          // Build a fresh MediaStream from ALL remote tracks on this connection
-          const newStream = new MediaStream();
-          pc.getReceivers().forEach((receiver) => {
-            if (receiver.track) {
-              newStream.addTrack(receiver.track);
-            }
-          });
-          this.events.onRemoteTrackUpdated?.(call.peer, newStream);
-        };
-      }
-    } catch (e) {
-      console.warn('Could not attach ontrack listener:', e);
-    }
 
     call.on('close', () => {
       this.calls.delete(call.peer);
@@ -300,6 +301,7 @@ export class PeerService {
   }
 
   public disconnect(): void {
+    this.stopScreenShare();
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => t.stop());
       this.localStream = null;

@@ -485,7 +485,7 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
         supabase
           .from('students')
           .select('*')
-          .eq('username', cleanUsername)
+          .ilike('username', cleanUsername)
           .maybeSingle(),
         8000
       );

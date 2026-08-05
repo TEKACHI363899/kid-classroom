@@ -31,7 +31,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   // Version 5.0: Student profile is 100% derived from authenticated profile! Zero name modals.
   const currentUser = useMemo<UserProfile>(() => {
     return user || {
-      id: `std-temp`,
+      id: `std-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       fullName: 'Học Sinh Thân Yêu',
       role: 'student',
     };

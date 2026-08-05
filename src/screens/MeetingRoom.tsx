@@ -217,7 +217,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         );
       },
       onRemoteScreenStream: (stream) => {
-        setScreenStream(stream);
+        setScreenStream((prev) => (prev?.id === stream.id ? prev : stream));
       },
       onRemoteScreenStreamEnded: () => {
         setScreenStream(null);
@@ -280,6 +280,12 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         setParticipants((prev) => {
           const exists = prev.some((p) => p.id === payload.connectionId);
           if (exists) return prev;
+
+          // Call screen only for truly NEW student joining while sharing
+          if (isTeacher && isScreenSharing) {
+            peerService.callScreenToPeer(payload.connectionId);
+          }
+
           return [
             ...prev,
             {
@@ -301,11 +307,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         // Lexicographical ordering prevents duplicate glare calls
         if (peerService.getConnectionId < payload.connectionId) {
           peerService.callPeer(payload.connectionId);
-        }
-
-        // If teacher is currently sharing screen, make dedicated screen call to new student
-        if (isTeacher && isScreenSharing) {
-          peerService.callScreenToPeer(payload.connectionId);
         }
       })
       .on('broadcast', { event: 'PEER_UPDATE' }, ({ payload }) => {

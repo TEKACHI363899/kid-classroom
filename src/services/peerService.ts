@@ -200,6 +200,7 @@ export class PeerService {
 
   public callScreenToPeer(targetConnectionId: string): void {
     if (!this.screenPeer || !this.screenStream || this.screenPeer.destroyed) return;
+    if (this.screenCalls.has(targetConnectionId)) return;
     try {
       const screenCall = this.screenPeer.call(targetConnectionId, this.screenStream);
       if (screenCall) {

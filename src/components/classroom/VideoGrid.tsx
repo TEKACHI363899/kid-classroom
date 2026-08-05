@@ -21,6 +21,31 @@ export interface VideoGridProps {
   onToggleStudentDraw?: (studentId: string, currentCanDraw: boolean) => void;
 }
 
+const ScreenVideoView: React.FC<{ stream: MediaStream }> = ({ stream }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !stream) return;
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+      video.play().catch((err) => console.warn('Screen video play error', err));
+    }
+  }, [stream]);
+
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
+      <video
+        ref={videoRef}
+        style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+        autoPlay
+        playsInline
+        muted
+      />
+    </div>
+  );
+};
+
 export const VideoGrid: React.FC<VideoGridProps> = ({
   containerWidth,
   containerHeight,
@@ -112,25 +137,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         >
           {/* Background Screen Share Stream or Interactive Whiteboard */}
           {screenStream ? (
-            <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
-              <video
-                key={screenStream.id}
-                ref={(ref) => {
-                  if (ref && screenStream && ref.srcObject !== screenStream) {
-                    ref.srcObject = screenStream;
-                    ref.play().catch((e) => console.warn('Screen video play error', e));
-                  }
-                }}
-                onLoadedMetadata={(e) => {
-                  const video = e.currentTarget;
-                  video.play().catch((err) => console.warn('Screen video play error on metadata', err));
-                }}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
-                autoPlay
-                playsInline
-                muted
-              />
-            </div>
+            <ScreenVideoView stream={screenStream} />
           ) : (
             <View style={styles.whiteboardBg} />
           )}

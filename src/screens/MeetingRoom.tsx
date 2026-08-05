@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Lock, RefreshCw, PhoneOff } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserProfile, StreamParticipant } from '../types';
@@ -37,9 +37,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const isTeacher = currentUser.role === 'teacher';
   const { container16x9 } = useResponsiveLayout();
 
-  // Media States
-  const [isMicOn, setIsMicOn] = useState<boolean>(true);
-  const [isCamOn, setIsCamOn] = useState<boolean>(true);
+  // Media States (Default to OFF)
+  const [isMicOn, setIsMicOn] = useState<boolean>(false);
+  const [isCamOn, setIsCamOn] = useState<boolean>(false);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
 
@@ -50,6 +50,14 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const [endedByTeacherNoticeVisible, setEndedByTeacherNoticeVisible] = useState<boolean>(false);
   const [permissionModalVisible, setPermissionModalVisible] = useState<boolean>(false);
   const [copiedLinkSuccess, setCopiedLinkSuccess] = useState<boolean>(false);
+
+  // Waiting Room Status
+  const [waitingStatus, setWaitingStatus] = useState<'waiting' | 'approved' | 'declined'>(
+    isTeacher ? 'approved' : 'waiting'
+  );
+  const [knockingStudents, setKnockingStudents] = useState<
+    { userId: string; userName: string; connectionId: string }[]
+  >([]);
 
   // Dynamic active participants
   const [participants, setParticipants] = useState<StreamParticipant[]>([]);
@@ -65,16 +73,18 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             id: currentUser.id,
             userName: currentUser.fullName,
             role: currentUser.role,
-            isMicOn: true,
-            isCamOn: true,
+            isMicOn,
+            isCamOn,
             isScreenSharing: false,
-            canDraw: true,
+            canDraw: isTeacher,
           },
         ];
       }
-      return prev;
+      return prev.map((p) =>
+        p.id === currentUser.id ? { ...p, isMicOn, isCamOn } : p
+      );
     });
-  }, [currentUser]);
+  }, [currentUser, isMicOn, isCamOn, isTeacher]);
 
   // Realtime Broadcast Listener for CLASSROOM_ENDED
   useEffect(() => {
@@ -116,8 +126,79 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     isTeacher,
   });
 
-  // Initialize PeerJS & Media Streams
+  // Student waiting room: Send periodic KNOCK broadcast
   useEffect(() => {
+    if (waitingStatus !== 'waiting') return;
+
+    const sendKnock = () => {
+      const channelName = `room_status_${roomCode}`;
+      const channel = supabase.channel(channelName);
+      channel.send({
+        type: 'broadcast',
+        event: 'KNOCK',
+        payload: {
+          userId: currentUser.id,
+          userName: currentUser.fullName,
+          connectionId: peerService.getConnectionId || `${currentUser.id}_temp`,
+        },
+      });
+    };
+
+    sendKnock();
+    const interval = setInterval(sendKnock, 3000);
+    return () => clearInterval(interval);
+  }, [waitingStatus, roomCode, currentUser]);
+
+  // Student waiting room: Listen for APPROVE / DECLINE signals
+  useEffect(() => {
+    if (waitingStatus !== 'waiting') return;
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+
+    channel
+      .on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
+        if (payload.targetUserId === currentUser.id) {
+          setWaitingStatus('approved');
+        }
+      })
+      .on('broadcast', { event: 'DECLINE' }, ({ payload }) => {
+        if (payload.targetUserId === currentUser.id) {
+          setWaitingStatus('declined');
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [waitingStatus, roomCode, currentUser]);
+
+  // Teacher waiting room: Listen for KNOCK signals
+  useEffect(() => {
+    if (!isTeacher) return;
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+
+    channel
+      .on('broadcast', { event: 'KNOCK' }, ({ payload }) => {
+        setKnockingStudents((prev) => {
+          if (prev.some((s) => s.userId === payload.userId)) return prev;
+          return [...prev, payload];
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isTeacher, roomCode]);
+
+  // Initialize PeerJS & Media Streams (only when approved)
+  useEffect(() => {
+    if (waitingStatus !== 'approved') return;
+
     peerService.initialize(currentUser.id, {
       onConnectionStatusChange: (status) => {
         setConnectionStatus(status);
@@ -135,6 +216,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           prev.map((p) => (p.id === peerId ? { ...p, stream } : p))
         );
       },
+      onPeerDisconnected: (peerId) => {
+        setParticipants((prev) => prev.filter((p) => p.id !== peerId));
+      },
       onDataReceived: (data) => {
         const msg = data as { type: string };
         if (msg && msg.type === 'CLASSROOM_ENDED' && !isTeacher) {
@@ -144,29 +228,137 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       },
     });
 
-    peerService.startLocalMedia(true, true);
+    peerService.startLocalMedia(true, true).then((stream) => {
+      if (stream) {
+        // Enforce muted and video off defaults at WebRTC level
+        peerService.toggleAudio(false);
+        peerService.toggleVideo(false);
+      }
+    });
 
     return () => {
       peerService.disconnect();
     };
-  }, [currentUser, isTeacher]);
+  }, [currentUser, isTeacher, waitingStatus]);
+
+  // Sync peer presence and state changes inside classroom
+  useEffect(() => {
+    if (waitingStatus !== 'approved') return;
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+
+    channel
+      .on('broadcast', { event: 'PEER_PRESENCE' }, ({ payload }) => {
+        if (payload.userId === currentUser.id) return;
+
+        setParticipants((prev) => {
+          const exists = prev.some((p) => p.id === payload.connectionId);
+          if (exists) return prev;
+          return [
+            ...prev,
+            {
+              id: payload.connectionId,
+              userName: payload.userName,
+              role: payload.role,
+              isMicOn: payload.isMicOn,
+              isCamOn: payload.isCamOn,
+              isScreenSharing: false,
+              canDraw:
+                payload.role === 'teacher'
+                  ? true
+                  : permissionState.globalCanDraw ||
+                    permissionState.studentPermissions[payload.userId] === true,
+            },
+          ];
+        });
+
+        // Lexicographical ordering prevents duplicate glare calls
+        if (peerService.getConnectionId < payload.connectionId) {
+          peerService.callPeer(payload.connectionId);
+        }
+      })
+      .on('broadcast', { event: 'PEER_UPDATE' }, ({ payload }) => {
+        setParticipants((prev) =>
+          prev.map((p) =>
+            p.id === payload.connectionId
+              ? { ...p, isMicOn: payload.isMicOn, isCamOn: payload.isCamOn }
+              : p
+          )
+        );
+      })
+      .on('broadcast', { event: 'PEER_LEAVE' }, ({ payload }) => {
+        setParticipants((prev) => prev.filter((p) => p.id !== payload.connectionId));
+      })
+      .subscribe();
+
+    const broadcastPresence = () => {
+      channel.send({
+        type: 'broadcast',
+        event: 'PEER_PRESENCE',
+        payload: {
+          userId: currentUser.id,
+          userName: currentUser.fullName,
+          role: currentUser.role,
+          connectionId: peerService.getConnectionId,
+          isMicOn,
+          isCamOn,
+        },
+      });
+    };
+
+    broadcastPresence();
+    const interval = setInterval(broadcastPresence, 3000);
+
+    return () => {
+      channel.send({
+        type: 'broadcast',
+        event: 'PEER_LEAVE',
+        payload: {
+          connectionId: peerService.getConnectionId,
+        },
+      });
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [waitingStatus, roomCode, currentUser, isMicOn, isCamOn, permissionState]);
 
   const handleToggleMic = () => {
     const nextState = !isMicOn;
     setIsMicOn(nextState);
     peerService.toggleAudio(nextState);
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === currentUser.id ? { ...p, isMicOn: nextState } : p))
-    );
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+    channel.send({
+      type: 'broadcast',
+      event: 'PEER_UPDATE',
+      payload: {
+        userId: currentUser.id,
+        connectionId: peerService.getConnectionId,
+        isMicOn: nextState,
+        isCamOn,
+      },
+    });
   };
 
   const handleToggleCam = () => {
     const nextState = !isCamOn;
     setIsCamOn(nextState);
     peerService.toggleVideo(nextState);
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === currentUser.id ? { ...p, isCamOn: nextState } : p))
-    );
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+    channel.send({
+      type: 'broadcast',
+      event: 'PEER_UPDATE',
+      payload: {
+        userId: currentUser.id,
+        connectionId: peerService.getConnectionId,
+        isMicOn,
+        isCamOn: nextState,
+      },
+    });
   };
 
   const handleToggleScreenShare = async () => {
@@ -212,6 +404,66 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     onLeaveRoom();
   };
 
+  const handleApproveStudent = (student: { userId: string; userName: string; connectionId: string }) => {
+    setKnockingStudents((prev) => prev.filter((s) => s.userId !== student.userId));
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+    channel.send({
+      type: 'broadcast',
+      event: 'APPROVE',
+      payload: {
+        targetUserId: student.userId,
+        targetConnectionId: student.connectionId,
+      },
+    });
+
+    peerService.callPeer(student.connectionId);
+  };
+
+  const handleDeclineStudent = (student: { userId: string; userName: string; connectionId: string }) => {
+    setKnockingStudents((prev) => prev.filter((s) => s.userId !== student.userId));
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+    channel.send({
+      type: 'broadcast',
+      event: 'DECLINE',
+      payload: {
+        targetUserId: student.userId,
+      },
+    });
+  };
+
+  // Render Waiting Screen for students awaiting teacher approval
+  if (waitingStatus === 'waiting') {
+    return (
+      <View style={styles.waitingContainer}>
+        <View style={styles.waitingCard}>
+          <RefreshCw size={48} color={COLORS.primary} style={{ animation: 'spin 2s linear infinite' } as any} />
+          <Text style={styles.waitingTitle}>Bạn đang ở phòng chờ</Text>
+          <Text style={styles.waitingSub}>Vui lòng đợi giáo viên duyệt vào lớp...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Render Rejection Screen for declined student requests
+  if (waitingStatus === 'declined') {
+    return (
+      <View style={styles.waitingContainer}>
+        <View style={styles.waitingCard}>
+          <Lock size={48} color={COLORS.danger} />
+          <Text style={styles.waitingTitle}>Yêu cầu bị từ chối</Text>
+          <Text style={styles.waitingSub}>Yêu cầu vào lớp của bạn đã bị giáo viên từ chối.</Text>
+          <TouchableOpacity onPress={onLeaveRoom} style={styles.backBtn}>
+            <Text style={styles.backBtnText}>Trở Về Dashboard</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.roomContainer}>
       <Header
@@ -219,6 +471,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         role={currentUser.role}
         roomTitle={`${roomTitle} (${roomCode})`}
         onLogout={() => setExitModalVisible(true)}
+        participants={participants}
       />
 
       {/* Network Reconnecting Banner */}
@@ -235,9 +488,10 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         containerHeight={container16x9.height}
         participants={participants.map((p) => ({
           ...p,
-          canDraw: isTeacher
-            ? true
-            : permissionState.globalCanDraw && (permissionState.studentPermissions[p.id] ?? true),
+          canDraw:
+            p.role === 'teacher'
+              ? true
+              : permissionState.globalCanDraw || permissionState.studentPermissions[p.id] === true,
         }))}
         screenStream={screenStream}
         strokes={strokes}
@@ -267,6 +521,34 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         onEndClassroom={() => setEndClassModalVisible(true)}
         copiedSuccess={copiedLinkSuccess}
       />
+
+      {/* Teacher Action Menu: Student Access Request Overlay */}
+      {isTeacher && knockingStudents.length > 0 && (
+        <View style={styles.knockPopup}>
+          <Text style={styles.knockPopupTitle}>Học sinh yêu cầu vào lớp</Text>
+          {knockingStudents.map((student) => (
+            <View key={student.userId} style={styles.knockRow}>
+              <Text style={styles.knockName} numberOfLines={1}>
+                {student.userName}
+              </Text>
+              <View style={styles.knockActions}>
+                <TouchableOpacity
+                  onPress={() => handleApproveStudent(student)}
+                  style={[styles.knockBtn, styles.approveBtn]}
+                >
+                  <Text style={styles.knockBtnText}>Đồng ý</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDeclineStudent(student)}
+                  style={[styles.knockBtn, styles.declineBtn]}
+                >
+                  <Text style={styles.knockBtnText}>Từ chối</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Teacher End Classroom Confirmation Modal */}
       <Modal
@@ -337,5 +619,108 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '800',
     fontSize: 14,
+  },
+  waitingContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  waitingCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    maxWidth: 400,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  waitingTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: COLORS.textDark,
+    marginTop: 20,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  waitingSub: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.gray600,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  backBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 10,
+  },
+  backBtnText: {
+    color: COLORS.white,
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  knockPopup: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    padding: 16,
+    width: 320,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 9999,
+  },
+  knockPopupTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.textDark,
+    marginBottom: 12,
+  },
+  knockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray100,
+  },
+  knockName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    flex: 1,
+    marginRight: 8,
+  },
+  knockActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  knockBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  approveBtn: {
+    backgroundColor: COLORS.success,
+  },
+  declineBtn: {
+    backgroundColor: COLORS.danger,
+  },
+  knockBtnText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

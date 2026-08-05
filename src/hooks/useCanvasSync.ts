@@ -29,7 +29,7 @@ export function useCanvasSync({
 }: UseCanvasSyncProps): UseCanvasSyncReturn {
   const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
   const [permissionState, setPermissionState] = useState<DrawingPermissionState>({
-    globalCanDraw: true,
+    globalCanDraw: false,
     studentPermissions: {},
   });
 
@@ -200,7 +200,7 @@ export function useCanvasSync({
 
   const canCurrentUserDraw = isTeacher
     ? true
-    : permissionState.globalCanDraw && (permissionState.studentPermissions[userId] ?? permissionState.studentPermissions[userName] ?? true);
+    : (permissionState.globalCanDraw || (permissionState.studentPermissions[userId] === true || permissionState.studentPermissions[userName] === true));
 
   return {
     strokes,

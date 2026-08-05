@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Mic, MicOff, VideoOff, Pencil, ShieldCheck, User } from 'lucide-react';
+import { Mic, MicOff, VideoOff, Pencil, ShieldCheck, User, Maximize, Minimize } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../../constants';
 import type { CanvasStroke, StreamParticipant } from '../../types';
 import { InteractiveCanvas } from '../canvas/InteractiveCanvas';
@@ -36,67 +36,186 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   canDraw,
   onToggleStudentDraw,
 }) => {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [windowSize, setWindowSize] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 800,
+    height: typeof window !== 'undefined' ? window.innerHeight : 600,
+  });
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(isCurrentlyFullscreen);
+      if (isCurrentlyFullscreen) {
+        setWindowSize({
+          width: window.innerWidth,
+          height: window.innerHeight,
+        });
+      }
+    };
+
+    const handleResize = () => {
+      if (document.fullscreenElement) {
+        setWindowSize({
+          width: window.innerWidth,
+          height: window.innerHeight,
+        });
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch((err) => {
+        console.error('Error entering fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const activeWidth = isFullscreen ? windowSize.width : containerWidth;
+  const activeHeight = isFullscreen ? windowSize.height : containerHeight;
+
   return (
-    <View style={styles.outerLayout}>
-      {/* Version 4.0: 16:9 Central Container with Mobile-Safe Screen Share Video (<video autoPlay playsInline muted />) */}
-      <View
-        style={[
-          styles.viewportContainer16x9,
-          { width: containerWidth, height: containerHeight },
-        ]}
-      >
-        {/* Background Screen Share Stream or Interactive Whiteboard */}
-        {screenStream ? (
-          <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
-            <video
-              ref={(ref) => {
-                if (ref && screenStream && ref.srcObject !== screenStream) {
-                  ref.srcObject = screenStream;
-                  ref.play().catch((e) => console.warn('Screen video play error', e));
-                }
+    <div
+      ref={containerRef}
+      style={{
+        width: isFullscreen ? '100vw' : '100%',
+        height: isFullscreen ? '100vh' : '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: isFullscreen ? '#F8FAFC' : 'transparent',
+        position: 'relative',
+      }}
+    >
+      <View style={[styles.outerLayout, isFullscreen && { padding: 0, gap: 0 }]}>
+        {/* Central Container with Mobile-Safe Screen Share Video or Interactive Whiteboard */}
+        <View
+          style={[
+            styles.viewportContainer16x9,
+            { width: activeWidth, height: activeHeight },
+            isFullscreen && { borderWidth: 0, borderRadius: 0 },
+          ]}
+        >
+          {/* Background Screen Share Stream or Interactive Whiteboard */}
+          {screenStream ? (
+            <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
+              <video
+                ref={(ref) => {
+                  if (ref && screenStream && ref.srcObject !== screenStream) {
+                    ref.srcObject = screenStream;
+                    ref.play().catch((e) => console.warn('Screen video play error', e));
+                  }
+                }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+                autoPlay
+                playsInline
+                muted
+              />
+            </div>
+          ) : (
+            <View style={styles.whiteboardBg} />
+          )}
+
+          {/* Realtime Canvas Overlay (16:9 Normalized Coords) */}
+          <InteractiveCanvas
+            containerWidth={activeWidth}
+            containerHeight={activeHeight}
+            strokes={strokes}
+            onAddStroke={onAddStroke}
+            onRemoveStroke={onRemoveStroke}
+            onClearAll={onClearAll}
+            userId={userId}
+            userName={userName}
+            isTeacher={isTeacher}
+            canDraw={canDraw}
+          />
+
+          {/* Fullscreen Toggle Button */}
+          <TouchableOpacity
+            onPress={toggleFullscreen}
+            style={{
+              position: 'absolute',
+              top: 16,
+              left: 16,
+              zIndex: 999,
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              padding: 10,
+              borderRadius: 12,
+              borderWidth: 1.5,
+              borderColor: COLORS.gray200,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+            }}
+          >
+            {isFullscreen ? (
+              <Minimize size={ICON_SIZES.md} color={COLORS.textDark} />
+            ) : (
+              <Maximize size={ICON_SIZES.md} color={COLORS.textDark} />
+            )}
+          </TouchableOpacity>
+
+          {/* Minimalist Floated Videos inside Full Screen Mode */}
+          {isFullscreen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 16,
+                right: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                zIndex: 1000,
+                pointerEvents: 'auto',
               }}
-              style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
-              autoPlay
-              playsInline
-              muted
-            />
-          </div>
-        ) : (
-          <View style={styles.whiteboardBg}>
-            <View style={styles.watermark}>
-              <Text style={styles.watermarkText}>BẢNG TRẮNG TƯƠNG TÁC LỚP HỌC</Text>
-            </View>
+            >
+              {participants
+                .filter((p) => p.role === 'teacher' || p.id === userId || p.userName === userName)
+                .map((p) => (
+                  <div key={p.id} style={{ transform: 'scale(0.85)', transformOrigin: 'top right' }}>
+                    <ParticipantCard
+                      participant={p}
+                      isSelf={p.id === userId || p.userName === userName}
+                      isTeacherOwner={isTeacher}
+                      onToggleStudentDraw={onToggleStudentDraw}
+                    />
+                  </div>
+                ))}
+            </div>
+          )}
+        </View>
+
+        {/* Regular Participant Video Grid Sidebar (Hidden in Full Screen) */}
+        {!isFullscreen && (
+          <View style={styles.participantsRail}>
+            {participants.map((p) => (
+              <ParticipantCard
+                key={p.id}
+                participant={p}
+                isSelf={p.id === userId || p.userName === userName}
+                isTeacherOwner={isTeacher}
+                onToggleStudentDraw={onToggleStudentDraw}
+              />
+            ))}
           </View>
         )}
-
-        {/* Realtime Canvas Overlay (16:9 Normalized Coords) */}
-        <InteractiveCanvas
-          containerWidth={containerWidth}
-          containerHeight={containerHeight}
-          strokes={strokes}
-          onAddStroke={onAddStroke}
-          onRemoveStroke={onRemoveStroke}
-          onClearAll={onClearAll}
-          userId={userId}
-          userName={userName}
-          isTeacher={isTeacher}
-          canDraw={canDraw}
-        />
       </View>
-
-      {/* Participant Video Grid Sidebar / Bottom Bar with Mobile-Safe Video Feeds */}
-      <View style={styles.participantsRail}>
-        {participants.map((p) => (
-          <ParticipantCard
-            key={p.id}
-            participant={p}
-            isSelf={p.id === userId}
-            isTeacherOwner={isTeacher}
-            onToggleStudentDraw={onToggleStudentDraw}
-          />
-        ))}
-      </View>
-    </View>
+    </div>
   );
 };
 

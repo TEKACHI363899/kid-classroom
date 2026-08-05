@@ -368,8 +368,32 @@ export const registerStudentAccount = async (
     return { success: false, message: 'Tên đăng nhập này đã được sử dụng. Vui lòng chọn Tên đăng nhập khác.' };
   }
 
+  // Generate secure unique student ID (high entropy UUID or high-entropy hex string)
+  const generateSecureStudentId = (): string => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `std-${crypto.randomUUID()}`;
+    }
+    // High-entropy fallback
+    const ts = Date.now().toString(16);
+    const rand = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+    return `std-${ts}-${rand()}-${rand()}-${rand()}`;
+  };
+
+  let studentId = generateSecureStudentId();
+  let isUnique = false;
+  let attempts = 0;
+  while (!isUnique && attempts < 15) {
+    const exists = allStudents.some((s) => s.id === studentId);
+    if (!exists) {
+      isUnique = true;
+    } else {
+      studentId = generateSecureStudentId();
+      attempts++;
+    }
+  }
+
   const newStudent: StudentAccount = {
-    id: `std-${Date.now()}`,
+    id: studentId,
     teacherId: teacherId || 'tch-101',
     fullName: cleanName,
     username: cleanUsername,

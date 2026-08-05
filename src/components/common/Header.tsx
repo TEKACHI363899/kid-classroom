@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { BookOpen, LogOut, ShieldCheck, User, Menu, X, Users } from 'lucide-react';
+import { BookOpen, LogOut, ShieldCheck, User, Menu, X, Users, Pencil, PencilOff } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../../constants';
 import type { UserRole, StreamParticipant } from '../../types';
 
@@ -138,6 +138,15 @@ export const Header: React.FC<HeaderProps> = ({
                 <Text style={styles.sidebarItemText} numberOfLines={1}>
                   {p.userName} {p.userName === userName ? '(Bạn)' : ''}
                 </Text>
+                {p.role === 'student' && (
+                  <View style={{ marginRight: 4 }}>
+                    {p.canDraw ? (
+                      <Pencil size={12} color={COLORS.success} />
+                    ) : (
+                      <PencilOff size={12} color={COLORS.gray400} />
+                    )}
+                  </View>
+                )}
               </View>
             ))}
           </ScrollView>

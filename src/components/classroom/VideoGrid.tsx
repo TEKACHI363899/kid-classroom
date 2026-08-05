@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Mic, MicOff, VideoOff, Pencil, ShieldCheck, User, Maximize, Minimize } from 'lucide-react';
+import { Mic, MicOff, VideoOff, Pencil, PencilOff, ShieldCheck, User, Maximize, Minimize } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../../constants';
 import type { CanvasStroke, StreamParticipant } from '../../types';
 import { InteractiveCanvas } from '../canvas/InteractiveCanvas';
@@ -287,9 +287,20 @@ const ParticipantCard: React.FC<{
         </View>
       </View>
 
-      <Text style={styles.participantName} numberOfLines={1}>
-        {p.userName} {isSelf ? '(Bạn)' : ''}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 4, width: '100%', paddingHorizontal: 4 }}>
+        <Text style={[styles.participantName, { flexShrink: 1 }]} numberOfLines={1}>
+          {p.userName} {isSelf ? '(Bạn)' : ''}
+        </Text>
+        {p.role === 'student' && (
+          <View style={{ flexShrink: 0, marginLeft: 2 }}>
+            {p.canDraw ? (
+              <Pencil size={12} color={COLORS.success} />
+            ) : (
+              <PencilOff size={12} color={COLORS.gray400} />
+            )}
+          </View>
+        )}
+      </View>
 
       {/* Individual Grant Drawing Toggle (Teacher only) */}
       {isTeacherOwner && p.role === 'student' && onToggleStudentDraw && (

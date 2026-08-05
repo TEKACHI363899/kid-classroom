@@ -28,11 +28,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   canDraw,
 }) => {
   if (!canDraw) {
-    return (
-      <View style={styles.disabledBanner}>
-        <Text style={styles.disabledText}>Giáo viên đang tạm tắt quyền vẽ của bạn</Text>
-      </View>
-    );
+    return null;
   }
 
   return (

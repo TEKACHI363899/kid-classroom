@@ -47,46 +47,96 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   copiedSuccess,
 }) => {
   const { canScreenShare } = getDeviceInfo();
+  const [isSmallScreen, setIsSmallScreen] = React.useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  });
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      setIsSmallScreen(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
-    <View style={styles.barContainer}>
+    <View style={[styles.barContainer, { height: isSmallScreen ? 56 : 76 }]}>
       <View style={styles.controlsGroup}>
         {/* Mic Button */}
         <TouchableOpacity
           onPress={onToggleMic}
-          style={[styles.btn, isMicOn ? styles.btnSuccess : styles.btnDanger]}
+          style={[
+            styles.btn,
+            isMicOn ? styles.btnSuccess : styles.btnDanger,
+            isSmallScreen && {
+              minWidth: 38,
+              minHeight: 38,
+              height: 38,
+              width: 38,
+              paddingHorizontal: 0,
+              borderRadius: 19,
+              gap: 0,
+            },
+          ]}
         >
           {isMicOn ? (
             <Mic size={ICON_SIZES.md} color={COLORS.white} />
           ) : (
             <MicOff size={ICON_SIZES.md} color={COLORS.white} />
           )}
-          <Text style={styles.btnLabel}>{isMicOn ? 'Bật Mic' : 'Tắt Mic'}</Text>
+          {!isSmallScreen && <Text style={styles.btnLabel}>{isMicOn ? 'Bật Mic' : 'Tắt Mic'}</Text>}
         </TouchableOpacity>
 
         {/* Cam Button */}
         <TouchableOpacity
           onPress={onToggleCam}
-          style={[styles.btn, isCamOn ? styles.btnSuccess : styles.btnDanger]}
+          style={[
+            styles.btn,
+            isCamOn ? styles.btnSuccess : styles.btnDanger,
+            isSmallScreen && {
+              minWidth: 38,
+              minHeight: 38,
+              height: 38,
+              width: 38,
+              paddingHorizontal: 0,
+              borderRadius: 19,
+              gap: 0,
+            },
+          ]}
         >
           {isCamOn ? (
             <Video size={ICON_SIZES.md} color={COLORS.white} />
           ) : (
             <VideoOff size={ICON_SIZES.md} color={COLORS.white} />
           )}
-          <Text style={styles.btnLabel}>{isCamOn ? 'Bật Cam' : 'Tắt Cam'}</Text>
+          {!isSmallScreen && <Text style={styles.btnLabel}>{isCamOn ? 'Bật Cam' : 'Tắt Cam'}</Text>}
         </TouchableOpacity>
 
         {/* Screen Share (Only if supported and Desktop) */}
         {isTeacher && canScreenShare && (
           <TouchableOpacity
             onPress={onToggleScreenShare}
-            style={[styles.btn, isScreenSharing ? styles.btnWarning : styles.btnPrimary]}
+            style={[
+              styles.btn,
+              isScreenSharing ? styles.btnWarning : styles.btnPrimary,
+              isSmallScreen && {
+                minWidth: 38,
+                minHeight: 38,
+                height: 38,
+                width: 38,
+                paddingHorizontal: 0,
+                borderRadius: 19,
+                gap: 0,
+              },
+            ]}
           >
             <Monitor size={ICON_SIZES.md} color={COLORS.white} />
-            <Text style={styles.btnLabel}>
-              {isScreenSharing ? 'Dừng Màn Hình' : 'Chia Sẻ Màn Hình'}
-            </Text>
+            {!isSmallScreen && (
+              <Text style={styles.btnLabel}>
+                {isScreenSharing ? 'Dừng Màn Hình' : 'Chia Sẻ Màn Hình'}
+              </Text>
+            )}
           </TouchableOpacity>
         )}
 
@@ -94,38 +144,101 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         {isTeacher && (
           <TouchableOpacity
             onPress={onToggleGlobalDraw}
-            style={[styles.btn, globalCanDraw ? styles.btnPurple : styles.btnOutline]}
+            style={[
+              styles.btn,
+              globalCanDraw ? styles.btnPurple : styles.btnOutline,
+              isSmallScreen && {
+                minWidth: 38,
+                minHeight: 38,
+                height: 38,
+                width: 38,
+                paddingHorizontal: 0,
+                borderRadius: 19,
+                gap: 0,
+              },
+            ]}
           >
             <Pencil size={ICON_SIZES.md} color={globalCanDraw ? COLORS.white : COLORS.purple} />
-            <Text style={[styles.btnLabel, !globalCanDraw && { color: COLORS.purple }]}>
-              {globalCanDraw ? 'Tắt Quyền Vẽ' : 'Cấp Quyền Vẽ All'}
-            </Text>
+            {!isSmallScreen && (
+              <Text style={[styles.btnLabel, !globalCanDraw && { color: COLORS.purple }]}>
+                {globalCanDraw ? 'Tắt Quyền Vẽ' : 'Cấp Quyền Vẽ All'}
+              </Text>
+            )}
           </TouchableOpacity>
         )}
 
-        {/* Copy Instant Room Link */}
-        <TouchableOpacity onPress={onCopyRoomLink} style={[styles.btn, styles.btnOutlinePrimary]}>
-          {copiedSuccess ? (
-            <CheckCircle size={ICON_SIZES.md} color={COLORS.success} />
-          ) : (
-            <Copy size={ICON_SIZES.md} color={COLORS.primary} />
-          )}
-          <Text style={[styles.btnLabel, { color: copiedSuccess ? COLORS.success : COLORS.primary }]}>
-            {copiedSuccess ? 'Đã Sao Chép!' : 'Sao Chép Link'}
-          </Text>
-        </TouchableOpacity>
+        {/* Copy Instant Room Link (Teacher only) */}
+        {isTeacher && (
+          <TouchableOpacity
+            onPress={onCopyRoomLink}
+            style={[
+              styles.btn,
+              styles.btnOutlinePrimary,
+              isSmallScreen && {
+                minWidth: 38,
+                minHeight: 38,
+                height: 38,
+                width: 38,
+                paddingHorizontal: 0,
+                borderRadius: 19,
+                gap: 0,
+              },
+            ]}
+          >
+            {copiedSuccess ? (
+              <CheckCircle size={ICON_SIZES.md} color={COLORS.success} />
+            ) : (
+              <Copy size={ICON_SIZES.md} color={COLORS.primary} />
+            )}
+            {!isSmallScreen && (
+              <Text style={[styles.btnLabel, { color: copiedSuccess ? COLORS.success : COLORS.primary }]}>
+                {copiedSuccess ? 'Đã Sao Chép!' : 'Sao Chép Link'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* Teacher-only: End Classroom Button */}
         {isTeacher && onEndClassroom ? (
-          <TouchableOpacity onPress={onEndClassroom} style={[styles.btn, styles.btnEndClass]}>
+          <TouchableOpacity
+            onPress={onEndClassroom}
+            style={[
+              styles.btn,
+              styles.btnEndClass,
+              isSmallScreen && {
+                minWidth: 38,
+                minHeight: 38,
+                height: 38,
+                width: 38,
+                paddingHorizontal: 0,
+                borderRadius: 19,
+                gap: 0,
+              },
+            ]}
+          >
             <PhoneOff size={ICON_SIZES.md} color={COLORS.white} />
-            <Text style={styles.btnLabel}>Kết Thúc Lớp Học</Text>
+            {!isSmallScreen && <Text style={styles.btnLabel}>Kết Thúc Lớp Học</Text>}
           </TouchableOpacity>
         ) : (
           /* Student: Leave Class Button */
-          <TouchableOpacity onPress={onLeaveClass} style={[styles.btn, styles.btnExit]}>
+          <TouchableOpacity
+            onPress={onLeaveClass}
+            style={[
+              styles.btn,
+              styles.btnExit,
+              isSmallScreen && {
+                minWidth: 38,
+                minHeight: 38,
+                height: 38,
+                width: 38,
+                paddingHorizontal: 0,
+                borderRadius: 19,
+                gap: 0,
+              },
+            ]}
+          >
             <LogOut size={ICON_SIZES.md} color={COLORS.white} />
-            <Text style={styles.btnLabel}>Thoát Lớp</Text>
+            {!isSmallScreen && <Text style={styles.btnLabel}>Thoát Lớp</Text>}
           </TouchableOpacity>
         )}
       </View>
@@ -135,7 +248,6 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
 const styles = StyleSheet.create({
   barContainer: {
-    height: 76,
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: COLORS.gray200,

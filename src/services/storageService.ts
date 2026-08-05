@@ -21,8 +21,8 @@ const isWindowAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 };
 
-// Helper: Timeout wrapper for network promises (4000ms max timeout for real cloud DB calls)
-const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number = 4000): Promise<T | null> => {
+// Helper: Timeout wrapper for network promises (8000ms max timeout for real cloud DB calls to handle cold starts)
+const withTimeout = <T>(promise: PromiseLike<T>, timeoutMs: number = 8000): Promise<T | null> => {
   return Promise.race([
     Promise.resolve(promise),
     new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
@@ -41,7 +41,7 @@ export const syncStudentsWithSupabase = async (): Promise<StudentAccount[]> => {
     // 1. Fetch Cloud DB records
     const res = await withTimeout<{ data: { id: string; teacher_id: string; full_name: string; username: string; password_hash: string }[] | null; error: unknown }>(
       supabase.from('students').select('*'),
-      3000
+      8000
     );
 
     if (res && !res.error && Array.isArray(res.data)) {
@@ -79,20 +79,26 @@ export const syncStudentsWithSupabase = async (): Promise<StudentAccount[]> => {
 
       // 3. Push local students missing in Cloud DB up to Supabase
       const dbUsernameSet = new Set(dbStudents.map((s) => s.username?.trim()?.toLowerCase()));
-      localList.forEach((s) => {
-        if (s && s.username && !dbUsernameSet.has(s.username.trim().toLowerCase())) {
-          withTimeout(
-            supabase.from('students').upsert({
-              id: s.id,
-              teacher_id: s.teacherId,
-              full_name: s.fullName,
-              username: s.username.trim().toLowerCase(),
-              password_hash: s.passwordText,
-            }, { onConflict: 'username' }),
-            2500
-          );
-        }
-      });
+      const missingInDb = localList.filter(
+        (s) => s && s.username && !dbUsernameSet.has(s.username.trim().toLowerCase())
+      );
+
+      if (missingInDb.length > 0) {
+        await Promise.allSettled(
+          missingInDb.map((s) =>
+            withTimeout(
+              supabase.from('students').upsert({
+                id: s.id,
+                teacher_id: s.teacherId,
+                full_name: s.fullName,
+                username: s.username.trim().toLowerCase(),
+                password_hash: s.passwordText,
+              }, { onConflict: 'username' }),
+              8000
+            )
+          )
+        );
+      }
 
       const mergedList = Array.from(mergedMap.values());
       if (isWindowAvailable()) {
@@ -424,7 +430,7 @@ export const registerStudentAccount = async (
   // 3. Supabase DB Upsert with Timeout Limit
   if (isSupabaseConfigured()) {
     try {
-      await withTimeout(
+      const res = await withTimeout<{ error: { message?: string } | null }>(
         supabase.from('students').upsert({
           id: newStudent.id,
           teacher_id: newStudent.teacherId,
@@ -432,8 +438,14 @@ export const registerStudentAccount = async (
           username: newStudent.username,
           password_hash: newStudent.passwordText,
         }, { onConflict: 'username' }),
-        3000
+        8000
       );
+
+      if (res && res.error) {
+        console.error('Supabase DB student upsert error:', res.error);
+      } else {
+        console.log('Successfully upserted student to Supabase DB:', newStudent.username);
+      }
     } catch (err) {
       console.warn('Supabase DB student upsert background warning:', err);
     }
@@ -475,7 +487,7 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
           .select('*')
           .eq('username', cleanUsername)
           .maybeSingle(),
-        3000
+        8000
       );
 
       if (res && !res.error && res.data) {
@@ -536,7 +548,9 @@ export const deleteTeacherStudent = (studentId: string, teacherId?: string): Stu
 
   if (isSupabaseConfigured()) {
     try {
-      withTimeout(supabase.from('students').delete().eq('id', studentId), 2000);
+      withTimeout(supabase.from('students').delete().eq('id', studentId), 6000).catch((err) => {
+        console.warn('Supabase delete student background error:', err);
+      });
     } catch (err) {
       console.warn('Supabase delete student error:', err);
     }

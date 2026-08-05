@@ -620,23 +620,31 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     }
   };
 
-  const handleConfirmEndClassroom = () => {
-    endClassroomByCode(roomCode);
+  const handleConfirmEndClassroom = async () => {
+    await endClassroomByCode(roomCode);
 
     const channelName = `room_status_${roomCode}`;
     const channel = supabase.channel(channelName);
-    channel.send({
-      type: 'broadcast',
-      event: 'CLASSROOM_ENDED',
-      payload: {},
-    });
+    
+    try {
+      await channel.send({
+        type: 'broadcast',
+        event: 'CLASSROOM_ENDED',
+        payload: {},
+      });
+    } catch (e) {
+      console.warn('Failed to send CLASSROOM_ENDED broadcast:', e);
+    }
 
     peerService.broadcastData({ type: 'CLASSROOM_ENDED' });
-    livekitService.disconnect();
-    peerService.disconnect();
 
-    setEndClassModalVisible(false);
-    onLeaveRoom();
+    // Allow 600ms for WebSocket transmission before closing connections and unmounting
+    setTimeout(() => {
+      livekitService.disconnect();
+      peerService.disconnect();
+      setEndClassModalVisible(false);
+      onLeaveRoom();
+    }, 600);
   };
 
   const handleApproveStudent = (student: { userId: string; userName: string; connectionId: string }) => {
@@ -739,6 +747,10 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           isTeacher={isTeacher}
           canDraw={canCurrentUserDraw}
           onToggleStudentDraw={(stdId, curr) => updateStudentPermission(stdId, !curr)}
+          isMicOn={isMicOn}
+          onToggleMic={handleToggleMic}
+          isCamOn={isCamOn}
+          onToggleCam={handleToggleCam}
         />
       </View>
 

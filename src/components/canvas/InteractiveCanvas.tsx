@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TextInput, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { Check, X } from 'lucide-react';
 import type { CanvasStroke, StrokePoint, ToolType, FloatingTextInputState } from '../../types';
 import { normalizeCoordinate, denormalizeCoordinate, pointsToSvgPath } from '../../utils/coordinateNormalizer';
@@ -31,6 +31,9 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   isTeacher,
   canDraw,
 }) => {
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscape = windowWidth > windowHeight;
+
   const [currentTool, setCurrentTool] = useState<ToolType>('pencil');
   const [currentColor, setCurrentColor] = useState<string>('#F43F5E');
   const [currentWidth, setCurrentWidth] = useState<number>(6);
@@ -71,8 +74,12 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!canDraw) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const absoluteX = e.clientX - rect.left;
-    const absoluteY = e.clientY - rect.top;
+    const rawX = e.clientX - rect.left;
+    const rawY = e.clientY - rect.top;
+
+    // Clamp coordinates strictly within the whiteboard frame
+    const absoluteX = Math.max(0, Math.min(rawX, containerWidth));
+    const absoluteY = Math.max(0, Math.min(rawY, containerHeight));
 
     const norm = normalizeCoordinate(absoluteX, absoluteY, containerWidth, containerHeight);
 
@@ -88,10 +95,13 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       isDrawingRef.current = true;
       eraseStrokesNearPoint(absoluteX, absoluteY);
     } else if (currentTool === 'text') {
+      // Keep text input fully inside the drawing frame with 8px margin
+      const textInputX = Math.max(8, Math.min(absoluteX, containerWidth - 220));
+      const textInputY = Math.max(8, Math.min(absoluteY, containerHeight - 120));
       setFloatingText({
         visible: true,
-        x: Math.min(absoluteX, containerWidth - 220),
-        y: Math.min(absoluteY, containerHeight - 120),
+        x: textInputX,
+        y: textInputY,
         normX: norm.x,
         normY: norm.y,
         text: '',
@@ -103,8 +113,12 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDrawingRef.current || !canDraw) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const absoluteX = e.clientX - rect.left;
-    const absoluteY = e.clientY - rect.top;
+    const rawX = e.clientX - rect.left;
+    const rawY = e.clientY - rect.top;
+
+    // Clamp coordinates strictly within the whiteboard frame
+    const absoluteX = Math.max(0, Math.min(rawX, containerWidth));
+    const absoluteY = Math.max(0, Math.min(rawY, containerHeight));
 
     if (currentTool === 'pencil') {
       const norm = normalizeCoordinate(absoluteX, absoluteY, containerWidth, containerHeight);
@@ -174,6 +188,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         onClearAll={onClearAll}
         isTeacher={isTeacher}
         canDraw={canDraw}
+        isLandscape={isLandscape}
       />
 
       <div
@@ -204,7 +219,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         <svg
           width={containerWidth}
           height={containerHeight}
-          style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}
+          style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
         >
           {/* Render Saved Vector Strokes */}
           {strokes.map((stroke) => {

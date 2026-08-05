@@ -14,6 +14,7 @@ export interface CanvasToolbarProps {
   onClearAll: () => void;
   isTeacher: boolean;
   canDraw: boolean;
+  isLandscape?: boolean;
 }
 
 export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
@@ -26,45 +27,48 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onClearAll,
   isTeacher,
   canDraw,
+  isLandscape = false,
 }) => {
   if (!canDraw) {
     return null;
   }
 
+  const iconSize = isLandscape ? 16 : ICON_SIZES.md;
+
   return (
-    <View style={styles.toolbarContainer}>
+    <View style={[styles.toolbarContainer, isLandscape ? styles.toolbarLandscape : styles.toolbarPortrait]}>
       {/* Tool Selector */}
       <View style={styles.sectionGroup}>
         <TouchableOpacity
           onPress={() => onSelectTool('pencil')}
-          style={[styles.toolBtn, currentTool === 'pencil' && styles.toolBtnActive]}
+          style={[styles.toolBtn, isLandscape && styles.toolBtnLandscape, currentTool === 'pencil' && styles.toolBtnActive]}
         >
-          <Pencil size={ICON_SIZES.md} color={currentTool === 'pencil' ? COLORS.white : COLORS.textDark} />
+          <Pencil size={iconSize} color={currentTool === 'pencil' ? COLORS.white : COLORS.textDark} />
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => onSelectTool('text')}
-          style={[styles.toolBtn, currentTool === 'text' && styles.toolBtnActive]}
+          style={[styles.toolBtn, isLandscape && styles.toolBtnLandscape, currentTool === 'text' && styles.toolBtnActive]}
         >
-          <Type size={ICON_SIZES.md} color={currentTool === 'text' ? COLORS.white : COLORS.textDark} />
+          <Type size={iconSize} color={currentTool === 'text' ? COLORS.white : COLORS.textDark} />
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => onSelectTool('eraser')}
-          style={[styles.toolBtn, currentTool === 'eraser' && styles.toolBtnActive]}
+          style={[styles.toolBtn, isLandscape && styles.toolBtnLandscape, currentTool === 'eraser' && styles.toolBtnActive]}
         >
-          <Eraser size={ICON_SIZES.md} color={currentTool === 'eraser' ? COLORS.white : COLORS.textDark} />
+          <Eraser size={iconSize} color={currentTool === 'eraser' ? COLORS.white : COLORS.textDark} />
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => onSelectTool('select')}
-          style={[styles.toolBtn, currentTool === 'select' && styles.toolBtnActive]}
+          style={[styles.toolBtn, isLandscape && styles.toolBtnLandscape, currentTool === 'select' && styles.toolBtnActive]}
         >
-          <MousePointer size={ICON_SIZES.md} color={currentTool === 'select' ? COLORS.white : COLORS.textDark} />
+          <MousePointer size={iconSize} color={currentTool === 'select' ? COLORS.white : COLORS.textDark} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.divider} />
+      <View style={[styles.divider, isLandscape && styles.dividerLandscape]} />
 
       {/* Color Palette */}
       <View style={styles.sectionGroup}>
@@ -75,13 +79,14 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             style={[
               styles.colorDot,
               { backgroundColor: c },
+              isLandscape && styles.colorDotLandscape,
               currentColor === c && styles.colorDotActive,
             ]}
           />
         ))}
       </View>
 
-      <View style={styles.divider} />
+      <View style={[styles.divider, isLandscape && styles.dividerLandscape]} />
 
       {/* Stroke Sizes */}
       <View style={styles.sectionGroup}>
@@ -89,13 +94,13 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           <TouchableOpacity
             key={s.size}
             onPress={() => onSelectWidth(s.size)}
-            style={[styles.sizeBtn, currentWidth === s.size && styles.sizeBtnActive]}
+            style={[styles.sizeBtn, isLandscape && styles.sizeBtnLandscape, currentWidth === s.size && styles.sizeBtnActive]}
           >
             <View
               style={{
-                width: s.size + 4,
-                height: s.size + 4,
-                borderRadius: (s.size + 4) / 2,
+                width: isLandscape ? s.size / 1.5 + 2 : s.size + 4,
+                height: isLandscape ? s.size / 1.5 + 2 : s.size + 4,
+                borderRadius: isLandscape ? (s.size / 1.5 + 2) / 2 : (s.size + 4) / 2,
                 backgroundColor: currentWidth === s.size ? COLORS.primary : COLORS.gray600,
               }}
             />
@@ -106,10 +111,10 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       {/* Clear All for Teacher */}
       {isTeacher && (
         <>
-          <View style={styles.divider} />
-          <TouchableOpacity onPress={onClearAll} style={styles.clearBtn}>
-            <Trash2 size={ICON_SIZES.md} color={COLORS.danger} />
-            <Text style={styles.clearText}>Xóa tất cả</Text>
+          <View style={[styles.divider, isLandscape && styles.dividerLandscape]} />
+          <TouchableOpacity onPress={onClearAll} style={[styles.clearBtn, isLandscape && styles.clearBtnLandscape]}>
+            <Trash2 size={iconSize} color={COLORS.danger} />
+            <Text style={[styles.clearText, isLandscape && styles.clearTextLandscape]}>Xóa tất cả</Text>
           </TouchableOpacity>
         </>
       )}
@@ -206,5 +211,41 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '800',
     fontSize: 14,
+  },
+  toolbarLandscape: {
+    top: 'auto',
+    bottom: -50,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    gap: 6,
+    borderRadius: 14,
+  },
+  toolbarPortrait: {
+    top: 12,
+  },
+  toolBtnLandscape: {
+    padding: 5,
+    borderRadius: 8,
+  },
+  colorDotLandscape: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+  },
+  sizeBtnLandscape: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  clearBtnLandscape: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  dividerLandscape: {
+    height: 18,
+  },
+  clearTextLandscape: {
+    fontSize: 12,
   },
 });

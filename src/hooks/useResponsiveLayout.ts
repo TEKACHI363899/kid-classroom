@@ -23,10 +23,10 @@ export function useResponsiveLayout(): ResponsiveLayout {
     const isMobile = availWidth < BREAKPOINT_MOBILE;
     const headerHeight = 72;
     const controlsHeight = isMobile ? 56 : 76;
-    const padding = isMobile ? 24 : 48;
+    const padding = isMobile ? 8 : 16;
 
     // Reserve vertical space for header, controls, and screen padding
-    const maxAvailableWidth = Math.max(availWidth - 24, 280);
+    const maxAvailableWidth = Math.max(availWidth - 12, 280);
     const maxAvailableHeight = Math.max(availHeight - (headerHeight + controlsHeight + padding), 150);
 
     let targetWidth = maxAvailableWidth;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Mic, MicOff, VideoOff, Pencil, PencilOff, ShieldCheck, User, Maximize, Minimize } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Pencil, PencilOff, ShieldCheck, User, Maximize, Minimize } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../../constants';
 import type { CanvasStroke, StreamParticipant } from '../../types';
 import { InteractiveCanvas } from '../canvas/InteractiveCanvas';
@@ -19,6 +19,10 @@ export interface VideoGridProps {
   isTeacher: boolean;
   canDraw: boolean;
   onToggleStudentDraw?: (studentId: string, currentCanDraw: boolean) => void;
+  isMicOn?: boolean;
+  onToggleMic?: () => void;
+  isCamOn?: boolean;
+  onToggleCam?: () => void;
 }
 
 const ScreenVideoView: React.FC<{ stream: MediaStream }> = ({ stream }) => {
@@ -60,24 +64,74 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   isTeacher,
   canDraw,
   onToggleStudentDraw,
+  isMicOn = false,
+  onToggleMic = () => {},
+  isCamOn = false,
+  onToggleCam = () => {},
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const [windowSize, setWindowSize] = useState({
     width: typeof window !== 'undefined' ? window.innerWidth : 800,
     height: typeof window !== 'undefined' ? window.innerHeight : 600,
   });
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const dragStartRef = useRef({ x: 0, y: 0, time: 0 });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    dragStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    const dx = Math.abs(e.clientX - dragStartRef.current.x);
+    const dy = Math.abs(e.clientY - dragStartRef.current.y);
+    const dt = Date.now() - dragStartRef.current.time;
+
+    // Tap/Click threshold: <5px drag distance, <300ms press duration
+    if (dx < 5 && dy < 5 && dt < 300) {
+      const target = e.target as HTMLElement;
+      // Do not toggle if click is inside the floating controls panel or any button/input
+      if (controlsRef.current && (controlsRef.current === target || controlsRef.current.contains(target))) {
+        return;
+      }
+      if (target.closest('button') || target.closest('a') || target.closest('input')) {
+        return;
+      }
+      setShowControls((prev) => !prev);
+    }
+  };
 
   useEffect(() => {
     const handleFullscreenChange = () => {
       const isCurrentlyFullscreen = !!document.fullscreenElement;
       setIsFullscreen(isCurrentlyFullscreen);
+      setShowControls(false); // Reset/hide controls initially in fullscreen
+
       if (isCurrentlyFullscreen) {
         setWindowSize({
           width: window.innerWidth,
           height: window.innerHeight,
         });
+
+        // Auto rotate and lock screen orientation to landscape on mobile devices
+        const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || 
+                              ('ontouchstart' in window && window.innerWidth < 1024);
+        if (isMobileDevice && window.screen && window.screen.orientation && typeof window.screen.orientation.lock === 'function') {
+          window.screen.orientation.lock('landscape').catch((err) => {
+            console.warn('Orientation lock failed:', err);
+          });
+        }
+      } else {
+        // Unlock screen orientation when exiting fullscreen
+        if (window.screen && window.screen.orientation && typeof window.screen.orientation.unlock === 'function') {
+          try {
+            window.screen.orientation.unlock();
+          } catch (err) {
+            console.warn('Orientation unlock failed:', err);
+          }
+        }
       }
     };
 
@@ -115,6 +169,8 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   return (
     <div
       ref={containerRef}
+      onPointerDown={isFullscreen ? handlePointerDown : undefined}
+      onPointerUp={isFullscreen ? handlePointerUp : undefined}
       style={{
         width: isFullscreen ? '100vw' : '100%',
         height: isFullscreen ? '100vh' : '100%',
@@ -229,6 +285,52 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           </View>
         )}
       </View>
+
+      {/* Floating Fullscreen Controls Bar (Mic/Cam Toggle) */}
+      {isFullscreen && showControls && (
+        <div
+          ref={controlsRef as any}
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderRadius: 24,
+            padding: '10px 20px',
+            boxShadow: '0 6px 12px rgba(0, 0, 0, 0.15)',
+            zIndex: 1005,
+            gap: 16,
+            pointerEvents: 'auto',
+          }}
+        >
+          <TouchableOpacity
+            onPress={onToggleMic}
+            style={[styles.floatingControlBtn, !isMicOn && styles.btnDanger]}
+          >
+            {isMicOn ? (
+              <Mic size={ICON_SIZES.md} color={COLORS.white} />
+            ) : (
+              <MicOff size={ICON_SIZES.md} color={COLORS.white} />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={onToggleCam}
+            style={[styles.floatingControlBtn, !isCamOn && styles.btnDanger]}
+          >
+            {isCamOn ? (
+              <Video size={ICON_SIZES.md} color={COLORS.white} />
+            ) : (
+              <VideoOff size={ICON_SIZES.md} color={COLORS.white} />
+            )}
+          </TouchableOpacity>
+        </div>
+      )}
     </div>
   );
 };
@@ -368,8 +470,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
-    gap: 16,
+    padding: 8,
+    gap: 8,
   },
   viewportContainer16x9: {
     position: 'relative',
@@ -473,5 +575,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: COLORS.gray600,
+  },
+  floatingControlBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.success,
+  },
+  btnDanger: {
+    backgroundColor: COLORS.danger,
   },
 });

@@ -122,7 +122,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
       scheduledEnd: endDate.toISOString(),
       roomCode,
       status: 'scheduled',
-      isActive: false,
+      isActive: true,
     };
     saveTeacherClassroom(newClassroom).then((updated) => {
       setClassrooms(updated);

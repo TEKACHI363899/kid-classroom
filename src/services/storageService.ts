@@ -590,7 +590,7 @@ export const fetchClassroomsFromSupabase = async (teacherId?: string): Promise<C
     return getTeacherClassrooms(teacherId);
   }
   try {
-    let query = supabase.from('classrooms').select('*').eq('is_active', true);
+    let query = supabase.from('classrooms').select('*');
     if (teacherId) {
       query = query.eq('teacher_id', teacherId);
     }

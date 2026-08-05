@@ -183,6 +183,21 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
       }}
     >
       <View style={[styles.outerLayout, isFullscreen && { padding: 0, gap: 0 }]}>
+        {/* Regular Participant Video Grid Sidebar (Left Side, Hidden in Full Screen) */}
+        {!isFullscreen && (
+          <View style={styles.participantsRail}>
+            {participants.map((p) => (
+              <ParticipantCard
+                key={p.id}
+                participant={p}
+                isSelf={p.id === userId || p.userName === userName}
+                isTeacherOwner={isTeacher}
+                onToggleStudentDraw={onToggleStudentDraw}
+              />
+            ))}
+          </View>
+        )}
+
         {/* Central Container with Mobile-Safe Screen Share Video or Interactive Whiteboard */}
         <View
           style={[
@@ -245,8 +260,8 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
             <div
               style={{
                 position: 'absolute',
-                top: 16,
-                right: 16,
+                bottom: 16,
+                left: 16,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 8,
@@ -257,7 +272,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               {participants
                 .filter((p) => p.role === 'teacher' || p.id === userId || p.userName === userName)
                 .map((p) => (
-                  <div key={p.id} style={{ transform: 'scale(0.85)', transformOrigin: 'top right' }}>
+                  <div key={p.id} style={{ transform: 'scale(0.85)', transformOrigin: 'bottom left' }}>
                     <ParticipantCard
                       participant={p}
                       isSelf={p.id === userId || p.userName === userName}
@@ -269,21 +284,6 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
             </div>
           )}
         </View>
-
-        {/* Regular Participant Video Grid Sidebar (Hidden in Full Screen) */}
-        {!isFullscreen && (
-          <View style={styles.participantsRail}>
-            {participants.map((p) => (
-              <ParticipantCard
-                key={p.id}
-                participant={p}
-                isSelf={p.id === userId || p.userName === userName}
-                isTeacherOwner={isTeacher}
-                onToggleStudentDraw={onToggleStudentDraw}
-              />
-            ))}
-          </View>
-        )}
       </View>
 
       {/* Floating Fullscreen Controls Bar (Mic/Cam Toggle) */}
@@ -468,6 +468,7 @@ const ParticipantCard: React.FC<{
 const styles = StyleSheet.create({
   outerLayout: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 8,
@@ -507,11 +508,13 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   participantsRail: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: 12,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+    gap: 8,
+    flexShrink: 0,
+    justifyContent: 'flex-start',
+    alignSelf: 'stretch',
+    paddingTop: 8,
   },
   participantCard: {
     width: 120,

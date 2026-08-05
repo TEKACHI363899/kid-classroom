@@ -137,13 +137,34 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     isTeacher,
   });
 
-  // Student waiting room: Send periodic KNOCK broadcast
+  // Student waiting room: Combined KNOCK sender & APPROVE/DECLINE listener
   useEffect(() => {
     if (waitingStatus !== 'waiting') return;
 
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName);
+
+    // Subscribe to APPROVE / DECLINE events
+    channel
+      .on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
+        if (payload.targetUserId === currentUser.id) {
+          setWaitingStatus('approved');
+        }
+      })
+      .on('broadcast', { event: 'DECLINE' }, ({ payload }) => {
+        if (payload.targetUserId === currentUser.id) {
+          setWaitingStatus('declined');
+        }
+      });
+
+    // Subscribe to the channel
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Student successfully connected to waiting room channel');
+      }
+    });
+
     const sendKnock = () => {
-      const channelName = `room_status_${roomCode}`;
-      const channel = supabase.channel(channelName);
       channel.send({
         type: 'broadcast',
         event: 'KNOCK',
@@ -155,32 +176,12 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       });
     };
 
+    // Send immediately and then every 3 seconds
     sendKnock();
     const interval = setInterval(sendKnock, 3000);
-    return () => clearInterval(interval);
-  }, [waitingStatus, roomCode, currentUser]);
-
-  // Student waiting room: Listen for APPROVE / DECLINE signals
-  useEffect(() => {
-    if (waitingStatus !== 'waiting') return;
-
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-
-    channel
-      .on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
-        if (payload.targetUserId === currentUser.id) {
-          setWaitingStatus('approved');
-        }
-      })
-      .on('broadcast', { event: 'DECLINE' }, ({ payload }) => {
-        if (payload.targetUserId === currentUser.id) {
-          setWaitingStatus('declined');
-        }
-      })
-      .subscribe();
 
     return () => {
+      clearInterval(interval);
       supabase.removeChannel(channel);
     };
   }, [waitingStatus, roomCode, currentUser]);

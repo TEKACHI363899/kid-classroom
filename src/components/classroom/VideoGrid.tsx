@@ -198,36 +198,40 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           </View>
         )}
 
-        {/* Central Container with Mobile-Safe Screen Share Video or Interactive Whiteboard */}
-        <View
-          style={[
-            styles.viewportContainer16x9,
-            { width: activeWidth, height: activeHeight },
-            isFullscreen
-              ? { borderWidth: 0, borderRadius: 0, overflow: 'hidden' }
-              : { overflow: 'visible' },
-          ]}
-        >
-          {/* Background Screen Share Stream or Interactive Whiteboard */}
-          {screenStream ? (
-            <ScreenVideoView stream={screenStream} />
-          ) : (
-            <View style={styles.whiteboardBg} />
-          )}
+        {/* Central column: whiteboard card + toolbar below */}
+        <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+          {/* Whiteboard card with screen share / background */}
+          <View
+            style={[
+              styles.viewportContainer16x9,
+              { width: activeWidth, height: activeHeight },
+              isFullscreen
+                ? { borderWidth: 0, borderRadius: 0, overflow: 'hidden' }
+                : { overflow: 'hidden' },
+            ]}
+          >
+            {/* Background Screen Share Stream or Interactive Whiteboard */}
+            {screenStream ? (
+              <ScreenVideoView stream={screenStream} />
+            ) : (
+              <View style={styles.whiteboardBg} />
+            )}
 
-          {/* Realtime Canvas Overlay (16:9 Normalized Coords) */}
-          <InteractiveCanvas
-            containerWidth={activeWidth}
-            containerHeight={activeHeight}
-            strokes={strokes}
-            onAddStroke={onAddStroke}
-            onRemoveStroke={onRemoveStroke}
-            onClearAll={onClearAll}
-            userId={userId}
-            userName={userName}
-            isTeacher={isTeacher}
-            canDraw={canDraw}
-          />
+            {/* Realtime Canvas Overlay — absolutely positioned inside whiteboard card */}
+            <View style={{ position: 'absolute', top: 0, left: 0, width: activeWidth, height: activeHeight }}>
+              <InteractiveCanvas
+                containerWidth={activeWidth}
+                containerHeight={activeHeight}
+                strokes={strokes}
+                onAddStroke={onAddStroke}
+                onRemoveStroke={onRemoveStroke}
+                onClearAll={onClearAll}
+                userId={userId}
+                userName={userName}
+                isTeacher={isTeacher}
+                canDraw={canDraw}
+              />
+            </View>
 
           {/* Fullscreen Toggle Button */}
           <TouchableOpacity
@@ -283,6 +287,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
                 ))}
             </div>
           )}
+        </View>
         </View>
       </View>
 

@@ -124,8 +124,6 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
 const styles = StyleSheet.create({
   toolbarContainer: {
-    position: 'absolute',
-    top: 12,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
@@ -140,6 +138,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 30,
     gap: 12,
+    marginTop: 8,
   },
   sectionGroup: {
     flexDirection: 'row',
@@ -213,16 +212,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   toolbarLandscape: {
-    top: 'auto',
-    bottom: -50,
     paddingHorizontal: 10,
     paddingVertical: 4,
     gap: 6,
     borderRadius: 14,
+    marginTop: 6,
   },
-  toolbarPortrait: {
-    top: 12,
-  },
+  toolbarPortrait: {},
   toolBtnLandscape: {
     padding: 5,
     borderRadius: 8,

@@ -114,11 +114,16 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           {screenStream ? (
             <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
               <video
+                key={screenStream.id}
                 ref={(ref) => {
                   if (ref && screenStream && ref.srcObject !== screenStream) {
                     ref.srcObject = screenStream;
                     ref.play().catch((e) => console.warn('Screen video play error', e));
                   }
+                }}
+                onLoadedMetadata={(e) => {
+                  const video = e.currentTarget;
+                  video.play().catch((err) => console.warn('Screen video play error on metadata', err));
                 }}
                 style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
                 autoPlay

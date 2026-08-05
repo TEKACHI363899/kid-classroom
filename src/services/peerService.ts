@@ -5,15 +5,18 @@ import { WEBRTC_AUDIO_CONSTRAINTS } from '../constants';
 export interface PeerServiceEvents {
   onLocalStream?: (stream: MediaStream) => void;
   onRemoteStream?: (peerId: string, stream: MediaStream) => void;
+  onRemoteTrackUpdated?: (peerId: string, stream: MediaStream) => void;
   onPeerDisconnected?: (peerId: string) => void;
   onDataReceived?: (data: unknown) => void;
   onConnectionStatusChange?: (status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'permission_denied') => void;
+  onScreenShareStopped?: () => void;
 }
 
 export class PeerService {
   private peer: Peer | null = null;
   private localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
+  private originalVideoTrack: MediaStreamTrack | null = null;
   private calls: Map<string, MediaConnection> = new Map();
   private dataConnections: Map<string, DataConnection> = new Map();
   private reconnectAttempts: number = 0;
@@ -149,15 +152,23 @@ export class PeerService {
       });
 
       this.screenStream = stream;
+      const screenVideoTrack = stream.getVideoTracks()[0];
 
-      // Swap track in localStream so that new connections automatically receive the screen share track
-      if (this.localStream && stream.getVideoTracks().length > 0) {
-        const localVideoTrack = this.localStream.getVideoTracks()[0];
-        if (localVideoTrack) {
-          this.localStream.removeTrack(localVideoTrack);
-        }
-        this.localStream.addTrack(stream.getVideoTracks()[0]);
+      // Save original camera track before swapping
+      if (this.localStream) {
+        this.originalVideoTrack = this.localStream.getVideoTracks()[0] || null;
       }
+
+      // Replace the video track in ALL existing peer connections
+      this.calls.forEach((call) => {
+        const senders = call.peerConnection.getSenders();
+        const videoSender = senders.find((s) => s.track?.kind === 'video' || s.track === null);
+        if (videoSender) {
+          videoSender.replaceTrack(screenVideoTrack).catch((e) =>
+            console.warn('replaceTrack error:', e)
+          );
+        }
+      });
 
       stream.getVideoTracks()[0].onended = () => {
         this.stopScreenShare();
@@ -173,9 +184,11 @@ export class PeerService {
   public replaceVideoTrack(track: MediaStreamTrack | null): void {
     this.calls.forEach((call) => {
       const senders = call.peerConnection.getSenders();
-      const videoSender = senders.find((s) => s.track?.kind === 'video');
+      const videoSender = senders.find((s) => s.track?.kind === 'video' || s.track === null);
       if (videoSender) {
-        videoSender.replaceTrack(track);
+        videoSender.replaceTrack(track).catch((e) =>
+          console.warn('replaceTrack error:', e)
+        );
       }
     });
   }
@@ -185,6 +198,14 @@ export class PeerService {
       this.screenStream.getTracks().forEach((track) => track.stop());
       this.screenStream = null;
     }
+
+    // Restore original camera video track in existing peer connections
+    if (this.originalVideoTrack) {
+      this.replaceVideoTrack(this.originalVideoTrack);
+      this.originalVideoTrack = null;
+    }
+
+    this.events.onScreenShareStopped?.();
   }
 
   public callPeer(targetConnectionId: string): void {
@@ -206,6 +227,30 @@ export class PeerService {
     call.on('stream', (remoteStream) => {
       this.events.onRemoteStream?.(call.peer, remoteStream);
     });
+
+    // Listen for track replacement events on the underlying RTCPeerConnection.
+    // When the remote peer calls replaceTrack() (e.g., switching from camera to
+    // screen share), PeerJS does NOT fire the 'stream' event again. The browser
+    // does fire 'track' on the RTCPeerConnection though. We create a NEW
+    // MediaStream from all current remote tracks so React gets a fresh object
+    // reference and re-renders the <video> element.
+    try {
+      const pc = call.peerConnection;
+      if (pc) {
+        pc.ontrack = (_event: RTCTrackEvent) => {
+          // Build a fresh MediaStream from ALL remote tracks on this connection
+          const newStream = new MediaStream();
+          pc.getReceivers().forEach((receiver) => {
+            if (receiver.track) {
+              newStream.addTrack(receiver.track);
+            }
+          });
+          this.events.onRemoteTrackUpdated?.(call.peer, newStream);
+        };
+      }
+    } catch (e) {
+      console.warn('Could not attach ontrack listener:', e);
+    }
 
     call.on('close', () => {
       this.calls.delete(call.peer);

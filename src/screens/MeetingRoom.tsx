@@ -51,6 +51,10 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   isMicOnRef.current = isMicOn;
   const isCamOnRef = useRef<boolean>(isCamOn);
   isCamOnRef.current = isCamOn;
+  const isScreenSharingRef = useRef<boolean>(isScreenSharing);
+  isScreenSharingRef.current = isScreenSharing;
+  const useLivekitRef = useRef<boolean>(useLivekit);
+  useLivekitRef.current = useLivekit;
 
   // Connection & Modals State
   const [connectionStatus, setConnectionStatus] = useState<string>('connected');
@@ -64,6 +68,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const [waitingStatus, setWaitingStatus] = useState<'waiting' | 'approved' | 'declined'>(
     isTeacher ? 'approved' : 'waiting'
   );
+  const waitingStatusRef = useRef<'waiting' | 'approved' | 'declined'>(waitingStatus);
+  waitingStatusRef.current = waitingStatus;
   const [knockingStudents, setKnockingStudents] = useState<
     { userId: string; userName: string; connectionId: string }[]
   >([]);
@@ -96,30 +102,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     });
   }, [currentUser, isMicOn, isCamOn, isTeacher]);
 
-  // Realtime Broadcast Listener for CLASSROOM_ENDED
-  useEffect(() => {
-    if (!roomCode) return;
-
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName, {
-      config: { broadcast: { self: false } },
-    });
-
-    channel
-      .on('broadcast', { event: 'CLASSROOM_ENDED' }, () => {
-        if (!isTeacher) {
-          livekitService.disconnect();
-          peerService.disconnect();
-          setEndedByTeacherNoticeVisible(true);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [roomCode, isTeacher]);
-
   // Realtime Canvas Sync Hook
   const {
     strokes,
@@ -137,32 +119,177 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     isTeacher,
   });
 
-  // Student waiting room: Combined KNOCK sender & APPROVE/DECLINE listener
+  // Ref for permission state to avoid stale closures in unified channel listeners
+  const permissionStateRef = useRef<typeof permissionState>(permissionState);
+  permissionStateRef.current = permissionState;
+
+  // Unified Room Status Realtime Channel (Handles Knock, Approve, Decline, End Room, and Peer Presence)
   useEffect(() => {
-    if (waitingStatus !== 'waiting') return;
+    if (!roomCode) return;
+
+    const channelName = `room_status_${roomCode}`;
+    const channel = supabase.channel(channelName, {
+      config: { broadcast: { self: false } },
+    });
+
+    // 1. CLASSROOM_ENDED (for students)
+    channel.on('broadcast', { event: 'CLASSROOM_ENDED' }, () => {
+      if (!isTeacher) {
+        livekitService.disconnect();
+        peerService.disconnect();
+        setEndedByTeacherNoticeVisible(true);
+      }
+    });
+
+    // 2. KNOCK (for teachers)
+    channel.on('broadcast', { event: 'KNOCK' }, ({ payload }) => {
+      if (isTeacher) {
+        setKnockingStudents((prev) => {
+          if (prev.some((s) => s.userId === payload.userId)) return prev;
+          return [...prev, payload];
+        });
+      }
+    });
+
+    // 3. APPROVE (for students)
+    channel.on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
+      if (!isTeacher && payload.targetUserId === currentUser.id) {
+        setWaitingStatus('approved');
+      }
+    });
+
+    // 4. DECLINE (for students)
+    channel.on('broadcast', { event: 'DECLINE' }, ({ payload }) => {
+      if (!isTeacher && payload.targetUserId === currentUser.id) {
+        setWaitingStatus('declined');
+      }
+    });
+
+    // 5. PEER_PRESENCE (when approved or teacher)
+    channel.on('broadcast', { event: 'PEER_PRESENCE' }, ({ payload }) => {
+      if (waitingStatusRef.current !== 'approved') return;
+      if (payload.userId === currentUser.id) return;
+
+      setParticipants((prev) => {
+        const cleaned = prev.filter((p) => p.userId !== payload.userId);
+        const exists = cleaned.some((p) => p.id === payload.connectionId);
+        if (exists) return cleaned;
+
+        if (!useLivekitRef.current && isTeacher && isScreenSharingRef.current) {
+          peerService.callScreenToPeer(payload.connectionId);
+        }
+
+        return [
+          ...cleaned,
+          {
+            id: payload.connectionId,
+            userId: payload.userId,
+            userName: payload.userName,
+            role: payload.role,
+            isMicOn: payload.isMicOn,
+            isCamOn: payload.isCamOn,
+            isScreenSharing: payload.isScreenSharing || false,
+            canDraw:
+              payload.role === 'teacher'
+                ? true
+                : permissionStateRef.current.globalCanDraw ||
+                  permissionStateRef.current.studentPermissions[payload.userId] === true,
+          },
+        ];
+      });
+
+      if (!useLivekitRef.current && peerService.getConnectionId < payload.connectionId) {
+        peerService.callPeer(payload.connectionId);
+      }
+    });
+
+    // 6. PEER_UPDATE (when approved or teacher)
+    channel.on('broadcast', { event: 'PEER_UPDATE' }, ({ payload }) => {
+      if (waitingStatusRef.current !== 'approved') return;
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.id === payload.connectionId || p.userId === payload.userId
+            ? { ...p, isMicOn: payload.isMicOn, isCamOn: payload.isCamOn }
+            : p
+        )
+      );
+    });
+
+    // 7. SCREEN_SHARE_STATE (when approved or teacher)
+    channel.on('broadcast', { event: 'SCREEN_SHARE_STATE' }, ({ payload }) => {
+      if (waitingStatusRef.current !== 'approved') return;
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.role === 'teacher'
+            ? { ...p, isScreenSharing: payload.isSharing }
+            : p
+        )
+      );
+
+      if (!isTeacher && !payload.isSharing) {
+        setScreenStream(null);
+      }
+    });
+
+    // 8. PEER_LEAVE (when approved or teacher)
+    channel.on('broadcast', { event: 'PEER_LEAVE' }, ({ payload }) => {
+      if (waitingStatusRef.current !== 'approved') return;
+      setParticipants((prev) =>
+        prev.filter((p) => p.id !== payload.connectionId && p.userId !== payload.connectionId)
+      );
+    });
+
+    // Subscribe to the channel
+    channel.subscribe();
+
+    // Start presence broadcasting interval if approved or teacher
+    let presenceInterval: ReturnType<typeof setInterval> | null = null;
+    if (waitingStatus === 'approved') {
+      const broadcastPresence = () => {
+        channel.send({
+          type: 'broadcast',
+          event: 'PEER_PRESENCE',
+          payload: {
+            userId: currentUser.id,
+            userName: currentUser.fullName,
+            role: currentUser.role,
+            connectionId: useLivekitRef.current ? currentUser.id : peerService.getConnectionId,
+            isMicOn: isMicOnRef.current,
+            isCamOn: isCamOnRef.current,
+            isScreenSharing: isScreenSharingRef.current,
+          },
+        });
+      };
+
+      broadcastPresence();
+      presenceInterval = setInterval(broadcastPresence, 3000);
+    }
+
+    return () => {
+      if (presenceInterval) {
+        clearInterval(presenceInterval);
+      }
+
+      if (waitingStatusRef.current === 'approved') {
+        channel.send({
+          type: 'broadcast',
+          event: 'PEER_LEAVE',
+          payload: {
+            connectionId: useLivekitRef.current ? currentUser.id : peerService.getConnectionId,
+          },
+        });
+      }
+
+      supabase.removeChannel(channel);
+    };
+  }, [roomCode, isTeacher, currentUser, waitingStatus]);
+
+  // Student waiting room: KNOCK sender
+  useEffect(() => {
+    if (isTeacher || waitingStatus !== 'waiting') return;
 
     const channelName = `room_status_${roomCode}`;
     const channel = supabase.channel(channelName);
-
-    // Subscribe to APPROVE / DECLINE events
-    channel
-      .on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
-        if (payload.targetUserId === currentUser.id) {
-          setWaitingStatus('approved');
-        }
-      })
-      .on('broadcast', { event: 'DECLINE' }, ({ payload }) => {
-        if (payload.targetUserId === currentUser.id) {
-          setWaitingStatus('declined');
-        }
-      });
-
-    // Subscribe to the channel
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('Student successfully connected to waiting room channel');
-      }
-    });
 
     const sendKnock = () => {
       channel.send({
@@ -182,30 +309,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
     return () => {
       clearInterval(interval);
-      supabase.removeChannel(channel);
     };
-  }, [waitingStatus, roomCode, currentUser]);
-
-  // Teacher waiting room: Listen for KNOCK signals
-  useEffect(() => {
-    if (!isTeacher) return;
-
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-
-    channel
-      .on('broadcast', { event: 'KNOCK' }, ({ payload }) => {
-        setKnockingStudents((prev) => {
-          if (prev.some((s) => s.userId === payload.userId)) return prev;
-          return [...prev, payload];
-        });
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isTeacher, roomCode]);
+  }, [isTeacher, waitingStatus, roomCode, currentUser]);
 
   // Initialize Media Streams: LiveKit (SFU) with PeerJS (Mesh) Fallback
   useEffect(() => {
@@ -399,114 +504,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       }
     };
   }, [currentUser, isTeacher, waitingStatus, roomCode]);
-
-  // Sync peer presence and state changes inside classroom
-  useEffect(() => {
-    if (waitingStatus !== 'approved') return;
-
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-
-    channel
-      .on('broadcast', { event: 'PEER_PRESENCE' }, ({ payload }) => {
-        if (payload.userId === currentUser.id) return;
-
-        setParticipants((prev) => {
-          // Filter out stale connection for the same user (same userId but different connectionId)
-          const cleaned = prev.filter((p) => p.userId !== payload.userId);
-          const exists = cleaned.some((p) => p.id === payload.connectionId);
-          if (exists) return cleaned;
-
-          // Call screen only for truly NEW student joining while sharing
-          if (!useLivekit && isTeacher && isScreenSharing) {
-            peerService.callScreenToPeer(payload.connectionId);
-          }
-
-          return [
-            ...cleaned,
-            {
-              id: payload.connectionId,
-              userId: payload.userId,
-              userName: payload.userName,
-              role: payload.role,
-              isMicOn: payload.isMicOn,
-              isCamOn: payload.isCamOn,
-              isScreenSharing: payload.isScreenSharing || false,
-              canDraw:
-                payload.role === 'teacher'
-                  ? true
-                  : permissionState.globalCanDraw ||
-                    permissionState.studentPermissions[payload.userId] === true,
-            },
-          ];
-        });
-
-        // Lexicographical ordering prevents duplicate glare calls
-        if (!useLivekit && peerService.getConnectionId < payload.connectionId) {
-          peerService.callPeer(payload.connectionId);
-        }
-      })
-      .on('broadcast', { event: 'PEER_UPDATE' }, ({ payload }) => {
-        setParticipants((prev) =>
-          prev.map((p) =>
-            p.id === payload.connectionId || p.userId === payload.userId
-              ? { ...p, isMicOn: payload.isMicOn, isCamOn: payload.isCamOn }
-              : p
-          )
-        );
-      })
-      .on('broadcast', { event: 'SCREEN_SHARE_STATE' }, ({ payload }) => {
-        // Update isScreenSharing flag on teacher participant
-        setParticipants((prev) =>
-          prev.map((p) =>
-            p.role === 'teacher'
-              ? { ...p, isScreenSharing: payload.isSharing }
-              : p
-          )
-        );
-
-        if (!isTeacher && !payload.isSharing) {
-          setScreenStream(null);
-        }
-      })
-      .on('broadcast', { event: 'PEER_LEAVE' }, ({ payload }) => {
-        setParticipants((prev) =>
-          prev.filter((p) => p.id !== payload.connectionId && p.userId !== payload.connectionId)
-        );
-      })
-      .subscribe();
-
-    const broadcastPresence = () => {
-      channel.send({
-        type: 'broadcast',
-        event: 'PEER_PRESENCE',
-        payload: {
-          userId: currentUser.id,
-          userName: currentUser.fullName,
-          role: currentUser.role,
-          connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
-          isMicOn,
-          isCamOn,
-          isScreenSharing,
-        },
-      });
-    };
-
-    broadcastPresence();
-    const interval = setInterval(broadcastPresence, 3000);
-
-    return () => {
-      channel.send({
-        type: 'broadcast',
-        event: 'PEER_LEAVE',
-        payload: {
-          connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
-        },
-      });
-      clearInterval(interval);
-      supabase.removeChannel(channel);
-    };
-  }, [waitingStatus, roomCode, currentUser, isMicOn, isCamOn, isScreenSharing, permissionState, useLivekit, isTeacher]);
 
   const handleToggleMic = useCallback(() => {
     const nextState = !isMicOn;

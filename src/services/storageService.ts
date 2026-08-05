@@ -115,6 +115,14 @@ export const syncStudentsWithSupabase = async (): Promise<StudentAccount[]> => {
 
 // Trigger background sync on module load
 if (typeof window !== 'undefined') {
+  // Clear any existing dummy/stale records from local storage on first load of this version
+  const schemaVersion = localStorage.getItem('kid_classroom_schema_ver');
+  if (schemaVersion !== '5.2') {
+    localStorage.removeItem(STORAGE_KEYS.STUDENTS);
+    localStorage.removeItem(STORAGE_KEYS.CLASSROOMS);
+    localStorage.setItem('kid_classroom_schema_ver', '5.2');
+  }
+
   setTimeout(() => {
     syncStudentsWithSupabase();
   }, 100);
@@ -224,45 +232,9 @@ export const clearAuthSession = (): void => {
   }
 };
 
-const DEFAULT_CLASSROOMS: Classroom[] = [
-  {
-    id: 'cls-001',
-    title: 'Bài 1: Toán Tư Duy - Hình Học Cơ Bản',
-    teacherId: 'tch-101',
-    scheduledStart: new Date().toISOString(),
-    scheduledEnd: new Date(Date.now() + 3600000).toISOString(),
-    roomCode: 'MATH101',
-    status: 'live',
-    isActive: true,
-  },
-  {
-    id: 'cls-002',
-    title: 'Bài 2: Tiếng Anh Giao Tiếp Trẻ Em',
-    teacherId: 'tch-101',
-    scheduledStart: new Date(Date.now() + 86400000).toISOString(),
-    scheduledEnd: new Date(Date.now() + 90000000).toISOString(),
-    roomCode: 'ENG202',
-    status: 'scheduled',
-    isActive: false,
-  },
-];
+const DEFAULT_CLASSROOMS: Classroom[] = [];
 
-const DEFAULT_STUDENTS: StudentAccount[] = [
-  {
-    id: 'std-101',
-    teacherId: 'tch-101',
-    fullName: 'Nguyễn Văn An',
-    username: 'hocsinhan',
-    passwordText: '123456',
-  },
-  {
-    id: 'std-102',
-    teacherId: 'tch-101',
-    fullName: 'Trần Thị Bình',
-    username: 'hocsinhbinh',
-    passwordText: '123456',
-  },
-];
+const DEFAULT_STUDENTS: StudentAccount[] = [];
 
 export const getTeacherAccounts = (): TeacherAccount[] => {
   if (!isWindowAvailable()) return [];
@@ -368,7 +340,7 @@ export const getTeacherStudents = (teacherId?: string): StudentAccount[] => {
     }
     const allStudents: StudentAccount[] = JSON.parse(raw);
     if (!teacherId) return allStudents;
-    return allStudents.filter((s) => s.teacherId === teacherId || s.teacherId === 'tch-101');
+    return allStudents.filter((s) => s.teacherId === teacherId);
   } catch (error) {
     console.error('Error fetching students:', error);
     return DEFAULT_STUDENTS;
@@ -443,11 +415,23 @@ export const registerStudentAccount = async (
 
       if (res && res.error) {
         console.error('Supabase DB student upsert error:', res.error);
-      } else {
-        console.log('Successfully upserted student to Supabase DB:', newStudent.username);
+        return {
+          success: false,
+          message: `Không thể lưu tài khoản vào Cloud Database: ${res.error.message || 'Lỗi không xác định'}`
+        };
+      } else if (!res) {
+        return {
+          success: false,
+          message: 'Kết nối tới Cloud Database bị quá hạn (Timeout). Vui lòng thử lại.'
+        };
       }
+      console.log('Successfully upserted student to Supabase DB:', newStudent.username);
     } catch (err) {
-      console.warn('Supabase DB student upsert background warning:', err);
+      console.error('Supabase DB student upsert exception:', err);
+      return {
+        success: false,
+        message: `Lỗi kết nối Cloud Database: ${err instanceof Error ? err.message : String(err)}`
+      };
     }
   }
 

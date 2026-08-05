@@ -9,7 +9,11 @@ const KEY_NAME = 'VITE_SUPABASE_ANON_KEY';
 const getEnvUrl = (): string => {
   if (typeof window !== 'undefined') {
     const localUrl = localStorage.getItem('VITE_SUPABASE_URL');
-    if (localUrl && localUrl.includes('.supabase.co')) return localUrl;
+    if (localUrl && localUrl.includes('demo-kid-classroom')) {
+      localStorage.removeItem('VITE_SUPABASE_URL');
+    } else if (localUrl && localUrl.includes('.supabase.co')) {
+      return localUrl;
+    }
   }
   return import.meta.env.VITE_SUPABASE_URL || REAL_SUPABASE_URL;
 };
@@ -17,7 +21,11 @@ const getEnvUrl = (): string => {
 const getEnvKey = (): string => {
   if (typeof window !== 'undefined') {
     const localKey = localStorage.getItem(KEY_NAME);
-    if (localKey && localKey.length > 20) return localKey;
+    if (localKey && (localKey.includes('demo-key') || localKey.length <= 20)) {
+      localStorage.removeItem(KEY_NAME);
+    } else if (localKey && localKey.length > 20) {
+      return localKey;
+    }
   }
   return import.meta.env.VITE_SUPABASE_ANON_KEY || REAL_SUPABASE_ANON_KEY;
 };

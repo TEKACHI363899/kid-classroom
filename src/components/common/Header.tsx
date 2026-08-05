@@ -4,6 +4,8 @@ import { BookOpen, LogOut, ShieldCheck, User, Menu, X, Users, Pencil, PencilOff 
 import { COLORS, ICON_SIZES } from '../../constants';
 import type { UserRole, StreamParticipant } from '../../types';
 
+import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
+
 export interface HeaderProps {
   userName: string;
   role: UserRole;
@@ -22,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<any>(null);
+  const { isMobile } = useResponsiveLayout();
 
   // Check if active counting criteria is met: >=1 teacher AND >=1 student
   const hasTeacher = useMemo(() => {
@@ -67,11 +70,15 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <View style={styles.header}>
       <View style={styles.brandGroup}>
-        <View style={styles.logoBadge}>
-          <BookOpen size={ICON_SIZES.md} color={COLORS.white} />
-        </View>
-        <View>
-          <Text style={styles.brandTitle}>Lớp Học Thông Minh</Text>
+        {!isMobile && (
+          <View style={styles.logoBadge}>
+            <BookOpen size={ICON_SIZES.md} color={COLORS.white} />
+          </View>
+        )}
+        <View style={isMobile ? { maxWidth: 80 } : undefined}>
+          <Text style={styles.brandTitle} numberOfLines={1}>
+            {isMobile ? 'Lớp Học' : 'Lớp Học Thông Minh'}
+          </Text>
           {roomTitle ? (
             <Text style={styles.roomSubtitle} numberOfLines={1}>
               {roomTitle}
@@ -89,19 +96,31 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       <View style={styles.userGroup}>
-        <View style={styles.userInfo}>
-          <View style={[styles.roleTag, { backgroundColor: role === 'teacher' ? COLORS.purple : COLORS.success }]}>
-            {role === 'teacher' ? (
-              <ShieldCheck size={ICON_SIZES.sm} color={COLORS.white} />
-            ) : (
-              <User size={ICON_SIZES.sm} color={COLORS.white} />
-            )}
-            <Text style={styles.roleText}>
-              {role === 'teacher' ? 'Giáo Viên' : 'Học Sinh'}
+        {!isMobile ? (
+          <View style={styles.userInfo}>
+            <View style={[styles.roleTag, { backgroundColor: role === 'teacher' ? COLORS.purple : COLORS.success }]}>
+              {role === 'teacher' ? (
+                <ShieldCheck size={ICON_SIZES.sm} color={COLORS.white} />
+              ) : (
+                <User size={ICON_SIZES.sm} color={COLORS.white} />
+              )}
+              <Text style={styles.roleText}>
+                {role === 'teacher' ? 'Giáo Viên' : 'Học Sinh'}
+              </Text>
+            </View>
+            <Text style={[styles.userName, { maxWidth: 100 }]} numberOfLines={1}>
+              {userName}
             </Text>
           </View>
-          <Text style={styles.userName}>{userName}</Text>
-        </View>
+        ) : (
+          <View style={[styles.roleTag, { backgroundColor: role === 'teacher' ? COLORS.purple : COLORS.success, paddingHorizontal: 6, paddingVertical: 6, borderRadius: 10 }]}>
+            {role === 'teacher' ? (
+              <ShieldCheck size={14} color={COLORS.white} />
+            ) : (
+              <User size={14} color={COLORS.white} />
+            )}
+          </View>
+        )}
 
         {participants && (
           <TouchableOpacity onPress={() => setIsMenuOpen(!isMenuOpen)} style={styles.menuBtn}>

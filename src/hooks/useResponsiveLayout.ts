@@ -20,9 +20,14 @@ export function useResponsiveLayout(): ResponsiveLayout {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const calculate16x9Bounds = (availWidth: number, availHeight: number): Viewport16x9 => {
-    // Reserve vertical space for control bar / header padding
+    const isMobile = availWidth < BREAKPOINT_MOBILE;
+    const headerHeight = 72;
+    const controlsHeight = isMobile ? 56 : 76;
+    const padding = isMobile ? 24 : 48;
+
+    // Reserve vertical space for header, controls, and screen padding
     const maxAvailableWidth = Math.max(availWidth - 24, 280);
-    const maxAvailableHeight = Math.max(availHeight - 120, 200);
+    const maxAvailableHeight = Math.max(availHeight - (headerHeight + controlsHeight + padding), 150);
 
     let targetWidth = maxAvailableWidth;
     let targetHeight = targetWidth / ASPECT_RATIO_CONTAINER;

@@ -55,6 +55,7 @@ export interface AuthResponse {
 
 export interface Participant {
   id: string;
+  userId?: string;
   userName: string;
   role: UserRole;
   isCamOn: boolean;

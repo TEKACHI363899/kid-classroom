@@ -61,7 +61,22 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   }, []);
 
   return (
-    <View style={[styles.barContainer, { height: isSmallScreen ? 56 : 76 }]}>
+    <View
+      style={[
+        styles.barContainer,
+        { height: isSmallScreen ? 56 : 76 },
+        isSmallScreen && {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 9999,
+          borderTopWidth: 1.5,
+          borderTopColor: COLORS.gray200,
+          paddingBottom: 4, // Leave small safe area space
+        },
+      ]}
+    >
       <View style={styles.controlsGroup}>
         {/* Mic Button */}
         <TouchableOpacity

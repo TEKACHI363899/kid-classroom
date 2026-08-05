@@ -34,7 +34,7 @@ const ScreenVideoView: React.FC<{ stream: MediaStream }> = ({ stream }) => {
   }, [stream]);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
+    <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, borderRadius: 20, overflow: 'hidden' }}>
       <video
         ref={videoRef}
         style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
@@ -132,7 +132,9 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           style={[
             styles.viewportContainer16x9,
             { width: activeWidth, height: activeHeight },
-            isFullscreen && { borderWidth: 0, borderRadius: 0 },
+            isFullscreen
+              ? { borderWidth: 0, borderRadius: 0, overflow: 'hidden' }
+              : { overflow: 'visible' },
           ]}
         >
           {/* Background Screen Share Stream or Interactive Whiteboard */}
@@ -238,18 +240,45 @@ const ParticipantCard: React.FC<{
   onToggleStudentDraw?: (studentId: string, currentCanDraw: boolean) => void;
 }> = ({ participant: p, isSelf, isTeacherOwner, onToggleStudentDraw }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    if (videoRef.current && p.stream && p.isCamOn && !p.isScreenSharing) {
-      if (videoRef.current.srcObject !== p.stream) {
-        videoRef.current.srcObject = p.stream;
-        videoRef.current.play().catch((e) => console.warn('Video play warning', e));
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting);
+      },
+      { threshold: 0.1 }
+    );
+    const element = containerRef.current;
+    if (element) {
+      observer.observe(element);
+    }
+    return () => {
+      if (element) {
+        observer.unobserve(element);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      if (isVisible && p.stream && p.isCamOn && !p.isScreenSharing) {
+        if (video.srcObject !== p.stream) {
+          video.srcObject = p.stream;
+          video.play().catch((e) => console.warn('Video play warning', e));
+        }
+      } else {
+        video.srcObject = null;
       }
     }
-  }, [p.stream, p.isCamOn, p.isScreenSharing]);
+  }, [p.stream, p.isCamOn, p.isScreenSharing, isVisible]);
 
   return (
-    <View style={styles.participantCard}>
+    <div ref={containerRef}>
+      <View style={styles.participantCard}>
       <View style={styles.participantAvatarArea}>
         {/* Version 4.0: Mobile-safe Video Feed with autoPlay playsInline muted */}
         {p.isCamOn && p.stream && !p.isScreenSharing ? (
@@ -330,6 +359,7 @@ const ParticipantCard: React.FC<{
         </TouchableOpacity>
       )}
     </View>
+    </div>
   );
 };
 
@@ -345,7 +375,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: COLORS.white,
     borderRadius: 24,
-    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
@@ -360,6 +389,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   watermark: {
     paddingHorizontal: 20,

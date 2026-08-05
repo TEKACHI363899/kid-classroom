@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { Check, X } from 'lucide-react';
 import type { CanvasStroke, StrokePoint, ToolType, FloatingTextInputState } from '../../types';
@@ -35,8 +35,9 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const [currentColor, setCurrentColor] = useState<string>('#F43F5E');
   const [currentWidth, setCurrentWidth] = useState<number>(6);
 
-  const [isDrawing, setIsDrawing] = useState<boolean>(false);
-  const [currentPoints, setCurrentPoints] = useState<StrokePoint[]>([]);
+  const isDrawingRef = useRef<boolean>(false);
+  const pointsRef = useRef<StrokePoint[]>([]);
+  const activePathRef = useRef<SVGPathElement | null>(null);
 
   // Bug 6: Floating Inline Text Input Card State
   const [floatingText, setFloatingText] = useState<FloatingTextInputState>({
@@ -76,10 +77,15 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     const norm = normalizeCoordinate(absoluteX, absoluteY, containerWidth, containerHeight);
 
     if (currentTool === 'pencil') {
-      setIsDrawing(true);
-      setCurrentPoints([norm]);
+      isDrawingRef.current = true;
+      pointsRef.current = [norm];
+      if (activePathRef.current) {
+        const pathData = pointsToSvgPath([norm], containerWidth, containerHeight);
+        activePathRef.current.setAttribute('d', pathData);
+        activePathRef.current.style.display = 'block';
+      }
     } else if (currentTool === 'eraser') {
-      setIsDrawing(true);
+      isDrawingRef.current = true;
       eraseStrokesNearPoint(absoluteX, absoluteY);
     } else if (currentTool === 'text') {
       setFloatingText({
@@ -95,35 +101,43 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDrawing || !canDraw) return;
+    if (!isDrawingRef.current || !canDraw) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const absoluteX = e.clientX - rect.left;
     const absoluteY = e.clientY - rect.top;
 
     if (currentTool === 'pencil') {
       const norm = normalizeCoordinate(absoluteX, absoluteY, containerWidth, containerHeight);
-      setCurrentPoints((prev) => [...prev, norm]);
+      pointsRef.current.push(norm);
+      if (activePathRef.current) {
+        const pathData = pointsToSvgPath(pointsRef.current, containerWidth, containerHeight);
+        activePathRef.current.setAttribute('d', pathData);
+      }
     } else if (currentTool === 'eraser') {
       eraseStrokesNearPoint(absoluteX, absoluteY);
     }
   };
 
   const handlePointerUp = () => {
-    if (isDrawing && currentTool === 'pencil' && currentPoints.length > 0) {
-      setIsDrawing(false);
+    if (isDrawingRef.current && currentTool === 'pencil' && pointsRef.current.length > 0) {
+      isDrawingRef.current = false;
       const newStroke: CanvasStroke = {
         id: `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         userId,
         userName,
         toolType: 'pencil',
-        points: currentPoints,
+        points: [...pointsRef.current],
         color: currentColor,
         strokeWidth: currentWidth,
       };
       onAddStroke(newStroke);
-      setCurrentPoints([]);
+      pointsRef.current = [];
+      if (activePathRef.current) {
+        activePathRef.current.style.display = 'none';
+        activePathRef.current.setAttribute('d', '');
+      }
     } else {
-      setIsDrawing(false);
+      isDrawingRef.current = false;
     }
   };
 
@@ -145,8 +159,6 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     setFloatingText((prev) => ({ ...prev, visible: false, text: '' }));
   };
 
-  const currentSvgPath = pointsToSvgPath(currentPoints, containerWidth, containerHeight);
-
   return (
     <View style={[styles.canvasWrapper, { width: containerWidth, height: containerHeight }]}>
       <CanvasToolbar
@@ -164,7 +176,6 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         canDraw={canDraw}
       />
 
-      {/* SVG Canvas Overlay */}
       <div
         style={{
           width: '100%',
@@ -183,6 +194,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
             : 'not-allowed',
           touchAction: 'none',
           zIndex: 20,
+          overflow: 'visible',
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -192,7 +204,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         <svg
           width={containerWidth}
           height={containerHeight}
-          style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
+          style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}
         >
           {/* Render Saved Vector Strokes */}
           {strokes.map((stroke) => {
@@ -233,17 +245,17 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
             return null;
           })}
 
-          {/* Render Active Drawing Path */}
-          {isDrawing && currentTool === 'pencil' && currentSvgPath && (
-            <path
-              d={currentSvgPath}
-              stroke={currentColor}
-              strokeWidth={currentWidth}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
+          {/* Render Active Drawing Path (Direct DOM ref updated for zero-lag drawing) */}
+          <path
+            ref={activePathRef}
+            d=""
+            stroke={currentColor}
+            strokeWidth={currentWidth}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ display: 'none' }}
+          />
 
           {/* Bug 6: Neon Dashed Indicator + Live Text Preview */}
           {floatingText.visible && (
@@ -337,7 +349,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     zIndex: 15,
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   floatingCard: {
     position: 'absolute',

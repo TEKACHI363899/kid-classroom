@@ -11,6 +11,7 @@ export interface PeerServiceEvents {
   onDataReceived?: (data: unknown) => void;
   onConnectionStatusChange?: (status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'permission_denied') => void;
   onScreenShareStopped?: () => void;
+  onNetworkQualityChange?: (peerId: string, status: 'good' | 'poor') => void;
 }
 
 export class PeerService {
@@ -25,6 +26,8 @@ export class PeerService {
   private maxReconnectAttempts: number = 5;
   private events: PeerServiceEvents = {};
   private activeConnectionId: string = '';
+  private statsInterval: any = null;
+  private prevStats: Map<string, { lost: number; received: number }> = new Map();
 
   // Version 4.0: Unique Connection ID Generator per device tab
   public generateUniqueConnectionId(userId: string): string {
@@ -57,6 +60,7 @@ export class PeerService {
           this.activeConnectionId = id;
           this.reconnectAttempts = 0;
           this.events.onConnectionStatusChange?.('connected');
+          this.startStatsMonitoring();
           resolve(id);
         });
 
@@ -113,14 +117,75 @@ export class PeerService {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       this.events.onConnectionStatusChange?.('reconnecting');
+
+      const baseDelay = 1000; // 1s
+      const maxDelay = 16000; // 16s
+      const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), maxDelay);
+      const jitter = Math.random() * 1000; // 0-1s random jitter
+      const finalDelay = delay + jitter;
+
       setTimeout(() => {
         if (this.peer && !this.peer.destroyed) {
           this.peer.reconnect();
         }
-      }, 2000 * this.reconnectAttempts);
+      }, finalDelay);
     } else {
       this.events.onConnectionStatusChange?.('disconnected');
     }
+  }
+
+  private startStatsMonitoring(): void {
+    if (this.statsInterval) return;
+
+    this.statsInterval = setInterval(() => {
+      if (this.calls.size === 0) return;
+
+      this.calls.forEach(async (call, peerId) => {
+        const pc = call.peerConnection;
+        if (!pc || pc.connectionState !== 'connected') return;
+
+        try {
+          const stats = await pc.getStats();
+          let currentLost = 0;
+          let currentReceived = 0;
+
+          stats.forEach((report) => {
+            if (report.type === 'inbound-rtp' && report.kind === 'video') {
+              currentLost += report.packetsLost || 0;
+              currentReceived += report.packetsReceived || 0;
+            }
+          });
+
+          const prev = this.prevStats.get(peerId);
+          if (prev) {
+            const deltaLost = currentLost - prev.lost;
+            const deltaReceived = currentReceived - prev.received;
+            const totalPackets = deltaLost + deltaReceived;
+
+            if (totalPackets > 50) {
+              const lossRate = deltaLost / totalPackets;
+              if (lossRate > 0.10) { // 10% packet loss threshold
+                this.events.onNetworkQualityChange?.(peerId, 'poor');
+              } else {
+                this.events.onNetworkQualityChange?.(peerId, 'good');
+              }
+            }
+          }
+
+          this.prevStats.set(peerId, { lost: currentLost, received: currentReceived });
+        } catch (e) {
+          console.warn('getStats monitoring error:', e);
+        }
+      });
+    }, 3000);
+  }
+
+  private stopStatsMonitoring(): void {
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
+    this.prevStats.clear();
   }
 
   public async startLocalMedia(audio: boolean = true, video: boolean = true): Promise<MediaStream | null> {
@@ -303,6 +368,7 @@ export class PeerService {
 
   public disconnect(): void {
     this.stopScreenShare();
+    this.stopStatsMonitoring();
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => t.stop());
       this.localStream = null;

@@ -14,8 +14,8 @@ export function normalizeCoordinate(
   const safeWidth = Math.max(containerWidth, 1);
   const safeHeight = Math.max(containerHeight, 1);
   return {
-    x: Math.min(Math.max(absoluteX / safeWidth, 0), 1),
-    y: Math.min(Math.max(absoluteY / safeHeight, 0), 1),
+    x: absoluteX / safeWidth,
+    y: absoluteY / safeHeight,
   };
 }
 

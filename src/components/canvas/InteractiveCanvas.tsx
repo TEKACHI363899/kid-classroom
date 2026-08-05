@@ -174,175 +174,8 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   };
 
   return (
-    <View style={styles.canvasColumn}>
-      {/* Canvas draw area - fixed size matching 16:9 bounds */}
-      <View style={[styles.canvasWrapper, { width: containerWidth, height: containerHeight }]}>
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            cursor: canDraw
-              ? currentTool === 'pencil'
-                ? 'crosshair'
-                : currentTool === 'eraser'
-                ? 'cell'
-                : currentTool === 'text'
-                ? 'text'
-                : 'pointer'
-              : 'not-allowed',
-            touchAction: 'none',
-            zIndex: 20,
-            overflow: 'visible',
-          }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-        >
-          <svg
-            width={containerWidth}
-            height={containerHeight}
-            style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
-          >
-            {/* Render Saved Vector Strokes */}
-            {strokes.map((stroke) => {
-              if (stroke.toolType === 'pencil') {
-                const pathData = pointsToSvgPath(stroke.points, containerWidth, containerHeight);
-                return (
-                  <path
-                    key={stroke.id}
-                    d={pathData}
-                    stroke={stroke.color}
-                    strokeWidth={stroke.strokeWidth}
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                );
-              } else if (stroke.toolType === 'text' && stroke.points.length > 0) {
-                const pos = denormalizeCoordinate(
-                  stroke.points[0].x,
-                  stroke.points[0].y,
-                  containerWidth,
-                  containerHeight
-                );
-                return (
-                  <text
-                    key={stroke.id}
-                    x={pos.x}
-                    y={pos.y}
-                    fill={stroke.color}
-                    fontSize={stroke.fontSize || 20}
-                    fontWeight="bold"
-                    fontFamily="Nunito, sans-serif"
-                  >
-                    {stroke.textContent}
-                  </text>
-                );
-              }
-              return null;
-            })}
-
-            {/* Render Active Drawing Path (Direct DOM ref updated for zero-lag drawing) */}
-            <path
-              ref={activePathRef}
-              d=""
-              stroke={currentColor}
-              strokeWidth={currentWidth}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ display: 'none' }}
-            />
-
-            {/* Bug 6: Neon Dashed Indicator + Live Text Preview */}
-            {floatingText.visible && (
-              <>
-                <circle
-                  cx={floatingText.x}
-                  cy={floatingText.y}
-                  r={8}
-                  fill="none"
-                  stroke="#3B82F6"
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                />
-                {floatingText.text !== '' && (
-                  <text
-                    x={floatingText.x}
-                    y={floatingText.y}
-                    fill={floatingText.color}
-                    fontSize={currentWidth * 3 + 14}
-                    fontWeight="bold"
-                    fontFamily="Nunito, sans-serif"
-                    opacity={0.8}
-                  >
-                    {floatingText.text}
-                  </text>
-                )}
-              </>
-            )}
-          </svg>
-        </div>
-
-        {/* Bug 6: Floating Inline Text Input Card */}
-        {floatingText.visible && (
-          <View
-            style={[
-              styles.floatingCard,
-              {
-                top: floatingText.y + 12,
-                left: floatingText.x + 12,
-              },
-            ]}
-          >
-            <TextInput
-              style={styles.floatingInput}
-              placeholder="Gõ nội dung tại đây..."
-              placeholderTextColor={COLORS.gray400}
-              value={floatingText.text}
-              onChangeText={(text) => setFloatingText((prev) => ({ ...prev, text }))}
-              autoFocus
-              onSubmitEditing={handleConfirmText}
-            />
-
-            {/* Quick Color Selector */}
-            <View style={styles.floatingColorRow}>
-              {CANVAS_COLORS.slice(0, 4).map((c) => (
-                <TouchableOpacity
-                  key={c}
-                  onPress={() => setFloatingText((prev) => ({ ...prev, color: c }))}
-                  style={[
-                    styles.miniColorDot,
-                    { backgroundColor: c },
-                    floatingText.color === c && styles.miniColorDotActive,
-                  ]}
-                />
-              ))}
-
-              <View style={styles.floatingActionRow}>
-                <TouchableOpacity
-                  onPress={() => setFloatingText((prev) => ({ ...prev, visible: false }))}
-                  style={[styles.floatingActionBtn, styles.btnCancel]}
-                >
-                  <X size={16} color={COLORS.gray600} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleConfirmText}
-                  style={[styles.floatingActionBtn, styles.btnConfirm]}
-                >
-                  <Check size={16} color={COLORS.white} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        )}
-      </View>
-
-      {/* Toolbar below the canvas */}
+    <View style={[styles.canvasWrapper, { width: containerWidth, height: containerHeight }]}>
+      {/* Vertical Toolbar on the right side (absolute positioned) */}
       <CanvasToolbar
         currentTool={currentTool}
         onSelectTool={setCurrentTool}
@@ -358,19 +191,179 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         canDraw={canDraw}
         isLandscape={isLandscape}
       />
+
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          cursor: canDraw
+            ? currentTool === 'pencil'
+              ? 'crosshair'
+              : currentTool === 'eraser'
+              ? 'cell'
+              : currentTool === 'text'
+              ? 'text'
+              : 'pointer'
+            : 'not-allowed',
+          touchAction: 'none',
+          zIndex: 20,
+          overflow: 'visible',
+        }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <svg
+          width={containerWidth}
+          height={containerHeight}
+          style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
+        >
+          {/* Render Saved Vector Strokes */}
+          {strokes.map((stroke) => {
+            if (stroke.toolType === 'pencil') {
+              const pathData = pointsToSvgPath(stroke.points, containerWidth, containerHeight);
+              return (
+                <path
+                  key={stroke.id}
+                  d={pathData}
+                  stroke={stroke.color}
+                  strokeWidth={stroke.strokeWidth}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              );
+            } else if (stroke.toolType === 'text' && stroke.points.length > 0) {
+              const pos = denormalizeCoordinate(
+                stroke.points[0].x,
+                stroke.points[0].y,
+                containerWidth,
+                containerHeight
+              );
+              return (
+                <text
+                  key={stroke.id}
+                  x={pos.x}
+                  y={pos.y}
+                  fill={stroke.color}
+                  fontSize={stroke.fontSize || 20}
+                  fontWeight="bold"
+                  fontFamily="Nunito, sans-serif"
+                >
+                  {stroke.textContent}
+                </text>
+              );
+            }
+            return null;
+          })}
+
+          {/* Render Active Drawing Path */}
+          <path
+            ref={activePathRef}
+            d=""
+            stroke={currentColor}
+            strokeWidth={currentWidth}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ display: 'none' }}
+          />
+
+          {/* Neon Dashed Indicator + Live Text Preview */}
+          {floatingText.visible && (
+            <>
+              <circle
+                cx={floatingText.x}
+                cy={floatingText.y}
+                r={8}
+                fill="none"
+                stroke="#3B82F6"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+              />
+              {floatingText.text !== '' && (
+                <text
+                  x={floatingText.x}
+                  y={floatingText.y}
+                  fill={floatingText.color}
+                  fontSize={currentWidth * 3 + 14}
+                  fontWeight="bold"
+                  fontFamily="Nunito, sans-serif"
+                  opacity={0.8}
+                >
+                  {floatingText.text}
+                </text>
+              )}
+            </>
+          )}
+        </svg>
+      </div>
+
+      {/* Floating Inline Text Input Card */}
+      {floatingText.visible && (
+        <View
+          style={[
+            styles.floatingCard,
+            {
+              top: floatingText.y + 12,
+              left: floatingText.x + 12,
+            },
+          ]}
+        >
+          <TextInput
+            style={styles.floatingInput}
+            placeholder="G\u00f5 n\u1ed9i dung t\u1ea1i \u0111\u00e2y..."
+            placeholderTextColor={COLORS.gray400}
+            value={floatingText.text}
+            onChangeText={(text) => setFloatingText((prev) => ({ ...prev, text }))}
+            autoFocus
+            onSubmitEditing={handleConfirmText}
+          />
+
+          {/* Quick Color Selector */}
+          <View style={styles.floatingColorRow}>
+            {CANVAS_COLORS.slice(0, 4).map((c) => (
+              <TouchableOpacity
+                key={c}
+                onPress={() => setFloatingText((prev) => ({ ...prev, color: c }))}
+                style={[
+                  styles.miniColorDot,
+                  { backgroundColor: c },
+                  floatingText.color === c && styles.miniColorDotActive,
+                ]}
+              />
+            ))}
+
+            <View style={styles.floatingActionRow}>
+              <TouchableOpacity
+                onPress={() => setFloatingText((prev) => ({ ...prev, visible: false }))}
+                style={[styles.floatingActionBtn, styles.btnCancel]}
+              >
+                <X size={16} color={COLORS.gray600} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleConfirmText}
+                style={[styles.floatingActionBtn, styles.btnConfirm]}
+              >
+                <Check size={16} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  canvasColumn: {
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
   canvasWrapper: {
     position: 'relative',
     zIndex: 15,
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   floatingCard: {
     position: 'absolute',

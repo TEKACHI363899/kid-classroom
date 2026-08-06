@@ -70,10 +70,24 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const [permissionModalVisible, setPermissionModalVisible] = useState<boolean>(false);
   const [copiedLinkSuccess, setCopiedLinkSuccess] = useState<boolean>(false);
 
+  // Check if URL indicates the student is already approved (e.g. from a redirected/new tab)
+  const queryParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isApprovedParam = queryParams?.get('approved') === 'true';
+
   // Waiting Room Status
-  const [waitingStatus, setWaitingStatus] = useState<'waiting' | 'approved' | 'declined'>(
-    isTeacher ? 'approved' : 'waiting'
-  );
+  const [waitingStatus, setWaitingStatus] = useState<'waiting' | 'approved' | 'declined'>(() => {
+    if (isTeacher) return 'approved';
+    
+    // Secure Device Verification: only allow bypass if URL approved=true AND device holds the localStorage authorization
+    if (typeof window !== 'undefined') {
+      const isApprovedLocal = localStorage.getItem(`approved_room_${roomCode}`) === 'true';
+      if (isApprovedParam && isApprovedLocal) {
+        return 'approved';
+      }
+    }
+    
+    return 'waiting';
+  });
   const waitingStatusRef = useRef<'waiting' | 'approved' | 'declined'>(waitingStatus);
   waitingStatusRef.current = waitingStatus;
   const [knockingStudents, setKnockingStudents] = useState<
@@ -156,12 +170,25 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     setGlobalCanDraw,
     permissionState,
     canCurrentUserDraw,
+    receiveStroke,
+    receiveRemoveStroke,
+    receiveClear,
+    receivePermission,
   } = useCanvasSync({
     roomId: roomCode,
     userId: currentUser.id,
     userName: currentUser.fullName,
     isTeacher,
   });
+
+  const receiveStrokeRef = useRef(receiveStroke);
+  receiveStrokeRef.current = receiveStroke;
+  const receiveRemoveStrokeRef = useRef(receiveRemoveStroke);
+  receiveRemoveStrokeRef.current = receiveRemoveStroke;
+  const receiveClearRef = useRef(receiveClear);
+  receiveClearRef.current = receiveClear;
+  const receivePermissionRef = useRef(receivePermission);
+  receivePermissionRef.current = receivePermission;
 
   // Ref for permission state to avoid stale closures in unified channel listeners
   const permissionStateRef = useRef<typeof permissionState>(permissionState);
@@ -182,6 +209,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       if (!isTeacherRef.current) {
         livekitService.disconnect();
         peerService.disconnect();
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(`approved_room_${roomCode}`);
+        }
         setEndedByTeacherNoticeVisible(true);
       }
     });
@@ -199,7 +229,21 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     // 3. APPROVE (for students)
     channel.on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
       if (!isTeacherRef.current && payload.targetUserId === currentUserRef.current.id) {
-        setWaitingStatus('approved');
+        // Set local storage flag for secure device validation in the new tab
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`approved_room_${roomCode}`, 'true');
+        }
+
+        // Automatically open the room in a new tab with approved=true
+        const roomUrl = `/room/${roomCode}?approved=true`;
+        const newWin = window.open(roomUrl, '_blank');
+        if (!newWin) {
+          // Fallback if popup is blocked by the browser
+          setWaitingStatus('approved');
+        } else {
+          // If the new tab opened successfully, redirect the current waiting room tab to the main screen
+          onLeaveRoom();
+        }
       }
     });
 
@@ -338,7 +382,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomCode]);
+  }, [roomCode, onLeaveRoom]);
 
   // Periodically broadcast presence when approved (or teacher)
   useEffect(() => {
@@ -464,10 +508,20 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           });
         },
         onDataReceived: (data) => {
-          const msg = data as { type: string };
-          if (msg && msg.type === 'CLASSROOM_ENDED' && !isTeacher) {
+          const msg = data as { type: string; payload?: any };
+          if (!msg || !msg.type) return;
+
+          if (msg.type === 'CLASSROOM_ENDED' && !isTeacher) {
             peerService.disconnect();
             setEndedByTeacherNoticeVisible(true);
+          } else if (msg.type === 'stroke') {
+            receiveStrokeRef.current(msg.payload);
+          } else if (msg.type === 'remove_stroke') {
+            receiveRemoveStrokeRef.current(msg.payload.strokeId);
+          } else if (msg.type === 'clear') {
+            receiveClearRef.current();
+          } else if (msg.type === 'permission') {
+            receivePermissionRef.current(msg.payload);
           }
         },
         onNetworkQualityChange: (peerId, status) => {
@@ -913,8 +967,19 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     }
   };
 
+  const handleExitRoom = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(`approved_room_${roomCode}`);
+    }
+    onLeaveRoom();
+  }, [roomCode, onLeaveRoom]);
+
   const handleConfirmEndClassroom = async () => {
     await endClassroomByCode(roomCode);
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(`approved_room_${roomCode}`);
+    }
 
     if (roomChannelRef.current) {
       try {
@@ -991,7 +1056,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           <Lock size={48} color={COLORS.danger} />
           <Text style={styles.waitingTitle}>Yêu cầu bị từ chối</Text>
           <Text style={styles.waitingSub}>Yêu cầu vào lớp của bạn đã bị giáo viên từ chối.</Text>
-          <TouchableOpacity onPress={onLeaveRoom} style={styles.backBtn}>
+          <TouchableOpacity onPress={handleExitRoom} style={styles.backBtn}>
             <Text style={styles.backBtnText}>Trở Về Dashboard</Text>
           </TouchableOpacity>
         </View>
@@ -1109,12 +1174,12 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       {/* Student Kick-out Notice Modal when Teacher Ends Classroom */}
       <Modal
         visible={endedByTeacherNoticeVisible}
-        onClose={onLeaveRoom}
+        onClose={handleExitRoom}
         title="Buổi Học Đã Kết Thúc"
         description="Buổi học đã được kết thúc bởi Giáo viên. Bạn sẽ được chuyển hướng về lại Màn hình Lịch học."
         confirmLabel="Trở Về Dashboard"
         confirmVariant="primary"
-        onConfirm={onLeaveRoom}
+        onConfirm={handleExitRoom}
       />
 
       {/* Exit Class Confirmation Modal */}
@@ -1125,7 +1190,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         description="Em có chắc chắn muốn thoát khỏi phòng học này không?"
         confirmLabel="Rời Lớp Học"
         confirmVariant="danger"
-        onConfirm={onLeaveRoom}
+        onConfirm={handleExitRoom}
         cancelLabel="Quay Lại Lớp"
       />
 

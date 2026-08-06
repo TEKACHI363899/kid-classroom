@@ -179,10 +179,26 @@ if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
             localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedArray));
           }
         }
+      } else if (data.type === 'SYNC_CLASSROOMS') {
+        const updatedRooms = data.payload as Classroom[];
+        if (Array.isArray(updatedRooms)) {
+          if (isWindowAvailable()) {
+            localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(updatedRooms));
+          }
+        }
+      } else if (data.type === 'REQUEST_CLASSROOMS_SYNC') {
+        const currentRooms = getTeacherClassrooms();
+        if (currentRooms.length > 0 && broadcastChannel) {
+          broadcastChannel.postMessage({
+            type: 'SYNC_CLASSROOMS',
+            payload: currentRooms,
+          });
+        }
       }
     };
 
     broadcastChannel.postMessage({ type: 'REQUEST_STUDENTS_SYNC' });
+    broadcastChannel.postMessage({ type: 'REQUEST_CLASSROOMS_SYNC' });
   } catch (err) {
     console.warn('BroadcastChannel sync init warning:', err);
   }
@@ -724,6 +740,17 @@ export const saveTeacherClassroom = async (classroom: Classroom): Promise<Classr
     }
   }
 
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({
+        type: 'SYNC_CLASSROOMS',
+        payload: updated,
+      });
+    } catch (err) {
+      console.warn('BroadcastChannel sync classrooms send error:', err);
+    }
+  }
+
   return updated;
 };
 
@@ -751,6 +778,17 @@ export const updateClassroomStatus = async (classroomId: string, status: Classro
       );
     } catch (err) {
       console.warn('Failed to update classroom status in Supabase:', err);
+    }
+  }
+
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({
+        type: 'SYNC_CLASSROOMS',
+        payload: updated,
+      });
+    } catch (err) {
+      console.warn('BroadcastChannel sync classrooms send error:', err);
     }
   }
 
@@ -786,6 +824,17 @@ export const endClassroomByCode = async (roomCode: string): Promise<Classroom[]>
     }
   }
 
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({
+        type: 'SYNC_CLASSROOMS',
+        payload: updated,
+      });
+    } catch (err) {
+      console.warn('BroadcastChannel sync classrooms send error:', err);
+    }
+  }
+
   return updated;
 };
 
@@ -808,6 +857,17 @@ export const deleteTeacherClassroom = async (classroomId: string, teacherId?: st
       );
     } catch (err) {
       console.warn('Failed to delete classroom in Supabase:', err);
+    }
+  }
+
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({
+        type: 'SYNC_CLASSROOMS',
+        payload: updated,
+      });
+    } catch (err) {
+      console.warn('BroadcastChannel sync classrooms send error:', err);
     }
   }
 

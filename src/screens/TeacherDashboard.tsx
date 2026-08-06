@@ -6,7 +6,6 @@ import type { StudentAccount, Classroom, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import {
-  fetchClassroomsFromSupabase,
   formatScheduledTime,
   saveTeacherClassroom,
   updateClassroomStatus,
@@ -15,6 +14,7 @@ import {
   registerStudentAccount,
   deleteTeacherStudent,
 } from '../services/storageService';
+import { useLiveClassrooms } from '../hooks/useLiveClassrooms';
 
 export interface TeacherDashboardProps {
   user?: UserProfile;
@@ -23,7 +23,10 @@ export interface TeacherDashboardProps {
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStartRoom }) => {
   const [students, setStudents] = useState<StudentAccount[]>([]);
-  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  
+  const activeTeacherId = user?.id || 'tch-101';
+  
+  const { classrooms, setClassrooms } = useLiveClassrooms(activeTeacherId);
 
   // Add Student Modal State
   const [addStudentVisible, setAddStudentVisible] = useState<boolean>(false);
@@ -47,12 +50,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const activeTeacherId = user?.id || 'tch-101';
-
   useEffect(() => {
-    fetchClassroomsFromSupabase(activeTeacherId).then((data) => {
-      setClassrooms(data);
-    });
     setStudents(getTeacherStudents(activeTeacherId));
   }, [activeTeacherId]);
 

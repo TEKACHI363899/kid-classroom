@@ -19,6 +19,10 @@ export interface UseCanvasSyncReturn {
   updateStudentPermission: (studentId: string, canDraw: boolean) => void;
   setGlobalCanDraw: (canDraw: boolean) => void;
   canCurrentUserDraw: boolean;
+  receiveStroke: (stroke: CanvasStroke) => void;
+  receiveRemoveStroke: (strokeId: string) => void;
+  receiveClear: () => void;
+  receivePermission: (state: DrawingPermissionState) => void;
 }
 
 export function useCanvasSync({
@@ -35,6 +39,26 @@ export function useCanvasSync({
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
+  // Define receivers for both Supabase Realtime & WebRTC fallback to handle messages
+  const receiveStroke = useCallback((incomingStroke: CanvasStroke) => {
+    setStrokes((prev) => {
+      if (prev.some((s) => s.id === incomingStroke.id)) return prev;
+      return [...prev, incomingStroke];
+    });
+  }, []);
+
+  const receiveRemoveStroke = useCallback((strokeId: string) => {
+    setStrokes((prev) => prev.filter((s) => s.id !== strokeId));
+  }, []);
+
+  const receiveClear = useCallback(() => {
+    setStrokes([]);
+  }, []);
+
+  const receivePermission = useCallback((nextState: DrawingPermissionState) => {
+    setPermissionState(nextState);
+  }, []);
+
   // Initialize Supabase Broadcast Channel
   useEffect(() => {
     if (!roomId) return;
@@ -49,22 +73,21 @@ export function useCanvasSync({
     channel
       .on('broadcast', { event: 'stroke' }, (payload) => {
         if (payload.payload) {
-          const incomingStroke = payload.payload as CanvasStroke;
-          setStrokes((prev) => [...prev, incomingStroke]);
+          receiveStroke(payload.payload as CanvasStroke);
         }
       })
       .on('broadcast', { event: 'remove_stroke' }, (payload) => {
         if (payload.payload) {
           const strokeId = (payload.payload as { strokeId: string }).strokeId;
-          setStrokes((prev) => prev.filter((s) => s.id !== strokeId));
+          receiveRemoveStroke(strokeId);
         }
       })
       .on('broadcast', { event: 'clear' }, () => {
-        setStrokes([]);
+        receiveClear();
       })
       .on('broadcast', { event: 'permission' }, (payload) => {
         if (payload.payload) {
-          setPermissionState(payload.payload as DrawingPermissionState);
+          receivePermission(payload.payload as DrawingPermissionState);
         }
       })
       .subscribe();
@@ -76,11 +99,14 @@ export function useCanvasSync({
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [roomId]);
+  }, [roomId, receiveStroke, receiveRemoveStroke, receiveClear, receivePermission]);
 
   const addStroke = useCallback(
     (newStroke: CanvasStroke) => {
-      setStrokes((prev) => [...prev, newStroke]);
+      setStrokes((prev) => {
+        if (prev.some((s) => s.id === newStroke.id)) return prev;
+        return [...prev, newStroke];
+      });
 
       if (channelRef.current) {
         channelRef.current.send({
@@ -211,5 +237,9 @@ export function useCanvasSync({
     updateStudentPermission,
     setGlobalCanDraw,
     canCurrentUserDraw,
+    receiveStroke,
+    receiveRemoveStroke,
+    receiveClear,
+    receivePermission,
   };
 }

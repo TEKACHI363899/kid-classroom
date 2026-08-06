@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { Video, Calendar, Sparkles, Smile } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
-import type { UserProfile, Classroom } from '../types';
+import type { UserProfile } from '../types';
 import { Button } from '../components/common/Button';
-import { fetchClassroomsFromSupabase, formatScheduledTime } from '../services/storageService';
+import { formatScheduledTime } from '../services/storageService';
+import { useLiveClassrooms } from '../hooks/useLiveClassrooms';
 
 export interface StudentDashboardProps {
   user: UserProfile;
@@ -12,13 +13,7 @@ export interface StudentDashboardProps {
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onJoinRoom }) => {
-  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
-
-  useEffect(() => {
-    fetchClassroomsFromSupabase().then((data) => {
-      setClassrooms(data);
-    });
-  }, []);
+  const { classrooms } = useLiveClassrooms();
 
   const liveClass = classrooms.find((c) => c.status === 'live' || c.isActive);
 

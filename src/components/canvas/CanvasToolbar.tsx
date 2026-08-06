@@ -15,6 +15,8 @@ export interface CanvasToolbarProps {
   isTeacher: boolean;
   canDraw: boolean;
   isLandscape?: boolean;
+  isFullscreen?: boolean;
+  showControls?: boolean;
 }
 
 export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
@@ -28,15 +30,27 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   isTeacher,
   canDraw,
   isLandscape = false,
+  isFullscreen = false,
+  showControls = false,
 }) => {
   if (!canDraw) {
+    return null;
+  }
+
+  if (isFullscreen && !showControls) {
     return null;
   }
 
   const iconSize = isLandscape ? 16 : ICON_SIZES.md;
 
   return (
-    <View style={[styles.toolbarContainer, isLandscape ? styles.toolbarLandscape : styles.toolbarPortrait]}>
+    <View
+      style={[
+        styles.toolbarContainer,
+        isLandscape ? styles.toolbarLandscape : styles.toolbarPortrait,
+        isFullscreen && styles.toolbarFullscreen,
+      ]}
+    >
       {/* Tool Selector */}
       <View style={styles.sectionGroup}>
         <TouchableOpacity
@@ -219,6 +233,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   toolbarPortrait: {},
+  toolbarFullscreen: {
+    right: 16,
+    top: 80,
+  },
   toolBtnLandscape: {
     padding: 5,
     borderRadius: 8,

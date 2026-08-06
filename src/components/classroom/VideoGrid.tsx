@@ -23,6 +23,7 @@ export interface VideoGridProps {
   onToggleMic?: () => void;
   isCamOn?: boolean;
   onToggleCam?: () => void;
+  elapsedSeconds?: number;
 }
 
 const ScreenVideoView: React.FC<{ stream: MediaStream }> = ({ stream }) => {
@@ -79,6 +80,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   onToggleMic = () => {},
   isCamOn = false,
   onToggleCam = () => {},
+  elapsedSeconds = 0,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
@@ -86,6 +88,17 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
     width: typeof window !== 'undefined' ? window.innerWidth : 800,
     height: typeof window !== 'undefined' ? window.innerHeight : 600,
   });
+
+  const formatTime = (totalSeconds: number) => {
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    return [
+      hrs.toString().padStart(2, '0'),
+      mins.toString().padStart(2, '0'),
+      secs.toString().padStart(2, '0')
+    ].join(':');
+  };
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<HTMLDivElement | null>(null);
@@ -107,7 +120,12 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
       if (controlsRef.current && (controlsRef.current === target || controlsRef.current.contains(target))) {
         return;
       }
-      if (target.closest('button') || target.closest('a') || target.closest('input')) {
+      if (
+        target.closest('button') || 
+        target.closest('a') || 
+        target.closest('input') || 
+        target.closest('[role="button"]')
+      ) {
         return;
       }
       setShowControls((prev) => !prev);
@@ -239,6 +257,8 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               userName={userName}
               isTeacher={isTeacher}
               canDraw={canDraw}
+              isFullscreen={isFullscreen}
+              showControls={showControls}
             />
           </View>
 
@@ -298,6 +318,46 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           )}
         </View>
       </View>
+
+      {/* Floating Fullscreen Timer */}
+      {isFullscreen && showControls && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 16,
+            left: '50%',
+            transform: 'translateX(-50%)' as any,
+            zIndex: 1005,
+            pointerEvents: 'none',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              paddingHorizontal: 18,
+              paddingVertical: 10,
+              borderRadius: 20,
+              borderWidth: 1.5,
+              borderColor: COLORS.primary,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.1,
+              shadowRadius: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: '800',
+                color: COLORS.primary,
+                fontFamily: 'monospace',
+              }}
+            >
+              {formatTime(elapsedSeconds)}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Floating Fullscreen Controls Bar (Mic/Cam Toggle) */}
       {isFullscreen && showControls && (
@@ -403,7 +463,7 @@ const ParticipantCard: React.FC<{
       <View style={styles.participantAvatarArea}>
         {/* Version 4.0: Mobile-safe Video Feed with autoPlay playsInline muted */}
         {p.isCamOn && p.stream && !p.isScreenSharing ? (
-          <div style={{ width: 64, height: 64, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' }}>
+          <div style={{ width: 90, height: 90, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' }}>
             <video
               ref={videoRef}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -553,8 +613,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   avatarCircle: {
-    width: 64,
-    height: 64,
+    width: 90,
+    height: 90,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',

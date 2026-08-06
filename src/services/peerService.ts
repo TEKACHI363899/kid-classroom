@@ -17,7 +17,7 @@ export interface PeerServiceEvents {
 export class PeerService {
   private peer: Peer | null = null;
   private screenPeer: Peer | null = null;
-  private localStream: MediaStream | null = null;
+  public localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
   private calls: Map<string, MediaConnection> = new Map();
   private screenCalls: Map<string, MediaConnection> = new Map();
@@ -190,6 +190,16 @@ export class PeerService {
 
   public async startLocalMedia(audio: boolean = true, video: boolean = true): Promise<MediaStream | null> {
     try {
+      // Release existing local stream tracks before requesting a new one
+      if (this.localStream) {
+        this.localStream.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch (e) {}
+        });
+        this.localStream = null;
+      }
+
       const constraints: MediaStreamConstraints = {
         audio: audio ? WEBRTC_AUDIO_CONSTRAINTS : false,
         video: video ? {

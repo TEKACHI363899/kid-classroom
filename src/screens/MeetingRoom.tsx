@@ -83,6 +83,36 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   // Dynamic active participants
   const [participants, setParticipants] = useState<StreamParticipant[]>([]);
 
+  // Timer State (Uplifted from Header.tsx)
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+  const timerRef = useRef<any>(null);
+
+  // Check if active counting criteria is met: >=1 teacher AND >=1 student
+  const isCounting = useMemo(() => {
+    const hasTeacher = participants.some((p) => p.role === 'teacher');
+    const hasStudent = participants.some((p) => p.role === 'student');
+    return hasTeacher && hasStudent;
+  }, [participants]);
+
+  useEffect(() => {
+    if (isCounting) {
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isCounting]);
+
   // Sync local participant
   useEffect(() => {
     setParticipants((prev) => {
@@ -644,8 +674,86 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     };
   }, [currentUser, isTeacher, waitingStatus, roomCode]);
 
-  const handleToggleMic = useCallback(() => {
+  const checkAndRequestPermission = useCallback(async (type: 'camera' | 'microphone'): Promise<boolean> => {
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const permissionName = type === 'camera' ? 'camera' : 'microphone';
+        const status = await navigator.permissions.query({ name: permissionName as any });
+        if (status.state === 'granted') {
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('Permissions query not supported or failed:', e);
+    }
+
+    // Secondary check: if we already have the track and it is active, it means permission was granted previously
+    if (type === 'camera') {
+      const hasTrack = useLivekit
+        ? !!(livekitService.localVideoTrack && livekitService.localVideoTrack.mediaStreamTrack && livekitService.localVideoTrack.mediaStreamTrack.readyState !== 'ended')
+        : !!(peerService.localStream && peerService.localStream.getVideoTracks().length > 0 && peerService.localStream.getVideoTracks().some(t => t.readyState !== 'ended'));
+      if (hasTrack) return true;
+    } else {
+      const hasTrack = useLivekit
+        ? !!(livekitService.localAudioTrack && livekitService.localAudioTrack.mediaStreamTrack && livekitService.localAudioTrack.mediaStreamTrack.readyState !== 'ended')
+        : !!(peerService.localStream && peerService.localStream.getAudioTracks().length > 0 && peerService.localStream.getAudioTracks().some(t => t.readyState !== 'ended'));
+      if (hasTrack) return true;
+    }
+
+    // If not granted, trigger browser confirm modal first
+    const label = type === 'camera' ? 'Camera' : 'Micro';
+    const userConfirmed = window.confirm(`Bạn có đồng ý cho phép ứng dụng truy cập ${label} để tiếp tục không?`);
+    return userConfirmed;
+  }, [useLivekit]);
+
+  const handleToggleMic = useCallback(async () => {
     const nextState = !isMicOn;
+
+    if (nextState) {
+      const hasPermission = await checkAndRequestPermission('microphone');
+      if (!hasPermission) {
+        return;
+      }
+
+      if (useLivekit) {
+        const hasAudio = livekitService.localAudioTrack && 
+                         livekitService.localAudioTrack.mediaStreamTrack && 
+                         livekitService.localAudioTrack.mediaStreamTrack.readyState !== 'ended';
+        if (!hasAudio) {
+          const stream = await livekitService.startLocalMedia(true, isCamOn);
+          if (!stream) {
+            return;
+          }
+        }
+        // Verify we actually have a valid track now
+        const hasAudioUpdated = livekitService.localAudioTrack && 
+                                livekitService.localAudioTrack.mediaStreamTrack && 
+                                livekitService.localAudioTrack.mediaStreamTrack.readyState !== 'ended';
+        if (!hasAudioUpdated) {
+          return;
+        }
+      } else {
+        const localStream = peerService.localStream;
+        const hasAudio = localStream && 
+                         localStream.getAudioTracks().length > 0 && 
+                         localStream.getAudioTracks().some(t => t.readyState !== 'ended');
+        if (!hasAudio) {
+          const stream = await peerService.startLocalMedia(true, isCamOn);
+          if (!stream) {
+            return;
+          }
+        }
+        // Verify we actually have a valid track now
+        const updatedStream = peerService.localStream;
+        const hasAudioUpdated = updatedStream && 
+                                updatedStream.getAudioTracks().length > 0 && 
+                                updatedStream.getAudioTracks().some(t => t.readyState !== 'ended');
+        if (!hasAudioUpdated) {
+          return;
+        }
+      }
+    }
+
     setIsMicOn(nextState);
     if (useLivekit) {
       livekitService.toggleAudio(nextState);
@@ -665,10 +773,56 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         },
       }).catch((e) => console.warn('Send peer update error:', e));
     }
-  }, [isMicOn, isCamOn, useLivekit, currentUser]);
+  }, [isMicOn, isCamOn, useLivekit, currentUser, checkAndRequestPermission]);
 
-  const handleToggleCam = useCallback(() => {
+  const handleToggleCam = useCallback(async () => {
     const nextState = !isCamOn;
+
+    if (nextState) {
+      const hasPermission = await checkAndRequestPermission('camera');
+      if (!hasPermission) {
+        return;
+      }
+
+      if (useLivekit) {
+        const hasVideo = livekitService.localVideoTrack && 
+                         livekitService.localVideoTrack.mediaStreamTrack && 
+                         livekitService.localVideoTrack.mediaStreamTrack.readyState !== 'ended';
+        if (!hasVideo) {
+          const stream = await livekitService.startLocalMedia(isMicOn, true);
+          if (!stream) {
+            return;
+          }
+        }
+        // Verify we actually have a valid track now
+        const hasVideoUpdated = livekitService.localVideoTrack && 
+                                livekitService.localVideoTrack.mediaStreamTrack && 
+                                livekitService.localVideoTrack.mediaStreamTrack.readyState !== 'ended';
+        if (!hasVideoUpdated) {
+          return;
+        }
+      } else {
+        const localStream = peerService.localStream;
+        const hasVideo = localStream && 
+                         localStream.getVideoTracks().length > 0 && 
+                         localStream.getVideoTracks().some(t => t.readyState !== 'ended');
+        if (!hasVideo) {
+          const stream = await peerService.startLocalMedia(isMicOn, true);
+          if (!stream) {
+            return;
+          }
+        }
+        // Verify we actually have a valid track now
+        const updatedStream = peerService.localStream;
+        const hasVideoUpdated = updatedStream && 
+                                updatedStream.getVideoTracks().length > 0 && 
+                                updatedStream.getVideoTracks().some(t => t.readyState !== 'ended');
+        if (!hasVideoUpdated) {
+          return;
+        }
+      }
+    }
+
     setIsCamOn(nextState);
     if (useLivekit) {
       livekitService.toggleVideo(nextState);
@@ -688,7 +842,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         },
       }).catch((e) => console.warn('Send peer update error:', e));
     }
-  }, [isMicOn, isCamOn, useLivekit, currentUser]);
+  }, [isMicOn, isCamOn, useLivekit, currentUser, checkAndRequestPermission]);
 
   const handleToggleScreenShare = useCallback(async () => {
     if (!isTeacher) return;
@@ -853,6 +1007,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         roomTitle={`${roomTitle} (${roomCode})`}
         onLogout={() => setExitModalVisible(true)}
         participants={participants}
+        elapsedSeconds={elapsedSeconds}
       />
 
       {/* Network Reconnecting Banner */}
@@ -889,6 +1044,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           onToggleMic={handleToggleMic}
           isCamOn={isCamOn}
           onToggleCam={handleToggleCam}
+          elapsedSeconds={elapsedSeconds}
         />
       </View>
 

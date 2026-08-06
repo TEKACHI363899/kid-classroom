@@ -17,6 +17,8 @@ export interface InteractiveCanvasProps {
   userName: string;
   isTeacher: boolean;
   canDraw: boolean;
+  isFullscreen?: boolean;
+  showControls?: boolean;
 }
 
 interface MemoizedStrokeProps {
@@ -74,6 +76,8 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   userName,
   isTeacher,
   canDraw,
+  isFullscreen = false,
+  showControls = false,
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscape = windowWidth > windowHeight;
@@ -234,6 +238,8 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         isTeacher={isTeacher}
         canDraw={canDraw}
         isLandscape={isLandscape}
+        isFullscreen={isFullscreen}
+        showControls={showControls}
       />
 
       <div

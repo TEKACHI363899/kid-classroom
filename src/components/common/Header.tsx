@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { BookOpen, LogOut, ShieldCheck, User, Menu, X, Users, Pencil, PencilOff } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../../constants';
@@ -12,6 +12,7 @@ export interface HeaderProps {
   roomTitle?: string;
   onLogout: () => void;
   participants?: StreamParticipant[];
+  elapsedSeconds?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,41 +21,10 @@ export const Header: React.FC<HeaderProps> = ({
   roomTitle,
   onLogout,
   participants,
+  elapsedSeconds = 0,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const timerRef = useRef<any>(null);
   const { isMobile } = useResponsiveLayout();
-
-  // Check if active counting criteria is met: >=1 teacher AND >=1 student
-  const hasTeacher = useMemo(() => {
-    return participants ? participants.some((p) => p.role === 'teacher') : false;
-  }, [participants]);
-
-  const hasStudent = useMemo(() => {
-    return participants ? participants.some((p) => p.role === 'student') : false;
-  }, [participants]);
-
-  const isCounting = hasTeacher && hasStudent;
-
-  useEffect(() => {
-    if (isCounting) {
-      timerRef.current = setInterval(() => {
-        setElapsedSeconds((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [isCounting]);
 
   const formatTime = (totalSeconds: number) => {
     const hrs = Math.floor(totalSeconds / 3600);

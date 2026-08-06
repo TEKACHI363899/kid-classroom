@@ -86,6 +86,13 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const [currentColor, setCurrentColor] = useState<string>('#F43F5E');
   const [currentWidth, setCurrentWidth] = useState<number>(6);
 
+  // Select and Drag State & Refs
+  const [selectedStrokeId, setSelectedStrokeId] = useState<string | null>(null);
+  const [draggedStrokeId, setDraggedStrokeId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const hasDraggedRef = useRef<boolean>(false);
+
   const isDrawingRef = useRef<boolean>(false);
   const pointsRef = useRef<StrokePoint[]>([]);
   const activePathRef = useRef<SVGPathElement | null>(null);
@@ -155,6 +162,45 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         text: '',
         color: currentColor,
       });
+    } else if (currentTool === 'select') {
+      let closestStroke: CanvasStroke | null = null;
+      let minDistance = Infinity;
+      const selectThreshold = 25; // px
+
+      strokes.forEach((stroke) => {
+        if (stroke.toolType === 'text') {
+          const pt = stroke.points[0];
+          if (pt) {
+            const absPt = denormalizeCoordinate(pt.x, pt.y, containerWidth, containerHeight);
+            const dist = Math.hypot(absPt.x - absoluteX, absPt.y - absoluteY);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestStroke = stroke;
+            }
+          }
+        } else {
+          stroke.points.forEach((pt) => {
+            const absPt = denormalizeCoordinate(pt.x, pt.y, containerWidth, containerHeight);
+            const dist = Math.hypot(absPt.x - absoluteX, absPt.y - absoluteY);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestStroke = stroke;
+            }
+          });
+        }
+      });
+
+      if (closestStroke && minDistance < selectThreshold) {
+        setSelectedStrokeId((closestStroke as CanvasStroke).id);
+        setDraggedStrokeId((closestStroke as CanvasStroke).id);
+        setDragOffset({ x: 0, y: 0 });
+        dragStartPosRef.current = { x: absoluteX, y: absoluteY };
+        hasDraggedRef.current = false;
+        isDrawingRef.current = true;
+      } else {
+        setSelectedStrokeId(null);
+        setDraggedStrokeId(null);
+      }
     }
   };
 
@@ -177,6 +223,16 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       }
     } else if (currentTool === 'eraser') {
       eraseStrokesNearPoint(absoluteX, absoluteY);
+    } else if (currentTool === 'select' && draggedStrokeId) {
+      const dx = absoluteX - dragStartPosRef.current.x;
+      const dy = absoluteY - dragStartPosRef.current.y;
+      if (Math.hypot(dx, dy) > 3) {
+        hasDraggedRef.current = true;
+      }
+      setDragOffset({
+        x: dx / containerWidth,
+        y: dy / containerHeight,
+      });
     }
   };
 
@@ -198,6 +254,28 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         activePathRef.current.style.display = 'none';
         activePathRef.current.setAttribute('d', '');
       }
+    } else if (isDrawingRef.current && currentTool === 'select' && draggedStrokeId) {
+      isDrawingRef.current = false;
+      if (hasDraggedRef.current && (Math.abs(dragOffset.x) > 0.001 || Math.abs(dragOffset.y) > 0.001)) {
+        const targetStroke = strokes.find((s) => s.id === draggedStrokeId);
+        if (targetStroke) {
+          const updatedPoints = targetStroke.points.map((pt) => ({
+            x: Math.max(0, Math.min(1, pt.x + dragOffset.x)),
+            y: Math.max(0, Math.min(1, pt.y + dragOffset.y)),
+          }));
+          const newStrokeId = `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+          const updatedStroke: CanvasStroke = {
+            ...targetStroke,
+            id: newStrokeId,
+            points: updatedPoints,
+          };
+          onRemoveStroke(draggedStrokeId);
+          onAddStroke(updatedStroke);
+          setSelectedStrokeId(newStrokeId);
+        }
+      }
+      setDraggedStrokeId(null);
+      setDragOffset({ x: 0, y: 0 });
     } else {
       isDrawingRef.current = false;
     }
@@ -221,12 +299,90 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     setFloatingText((prev) => ({ ...prev, visible: false, text: '' }));
   };
 
+  const handleSelectTool = (tool: ToolType) => {
+    setCurrentTool(tool);
+    setSelectedStrokeId(null);
+    setDraggedStrokeId(null);
+    setDragOffset({ x: 0, y: 0 });
+  };
+
+  // Listen for Delete or Backspace key to remove the selected stroke on desktop
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Avoid deleting if user is typing in a text input
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      if (currentTool === 'select' && selectedStrokeId) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          onRemoveStroke(selectedStrokeId);
+          setSelectedStrokeId(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [currentTool, selectedStrokeId, onRemoveStroke]);
+
+  // Calculate selection bounding box for drawing selection indicator
+  const selectionBox = React.useMemo(() => {
+    if (!selectedStrokeId) return null;
+    const selectedStroke = strokes.find((s) => s.id === selectedStrokeId);
+    if (!selectedStroke) return null;
+
+    const isDragging = selectedStroke.id === draggedStrokeId;
+    const pointsToUse = isDragging
+      ? selectedStroke.points.map((pt) => ({
+          x: Math.max(0, Math.min(1, pt.x + dragOffset.x)),
+          y: Math.max(0, Math.min(1, pt.y + dragOffset.y)),
+        }))
+      : selectedStroke.points;
+
+    if (pointsToUse.length === 0) return null;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    pointsToUse.forEach((pt) => {
+      const absPt = denormalizeCoordinate(pt.x, pt.y, containerWidth, containerHeight);
+      if (absPt.x < minX) minX = absPt.x;
+      if (absPt.x > maxX) maxX = absPt.x;
+      if (absPt.y < minY) minY = absPt.y;
+      if (absPt.y > maxY) maxY = absPt.y;
+    });
+
+    const padding = 8;
+
+    if (selectedStroke.toolType === 'text') {
+      const fontSize = selectedStroke.fontSize || 20;
+      const textLen = selectedStroke.textContent?.length || 10;
+      const estimatedWidth = textLen * fontSize * 0.6;
+      return {
+        x: minX - padding,
+        y: minY - fontSize - padding,
+        width: estimatedWidth + padding * 2,
+        height: fontSize + padding * 2,
+      };
+    }
+
+    return {
+      x: minX - padding,
+      y: minY - padding,
+      width: maxX - minX + padding * 2,
+      height: maxY - minY + padding * 2,
+    };
+  }, [selectedStrokeId, strokes, draggedStrokeId, dragOffset, containerWidth, containerHeight]);
+
   return (
     <View style={[styles.canvasWrapper, { width: containerWidth, height: containerHeight }]}>
       {/* Vertical Toolbar on the right side (absolute positioned) */}
       <CanvasToolbar
         currentTool={currentTool}
-        onSelectTool={setCurrentTool}
+        onSelectTool={handleSelectTool}
         currentColor={currentColor}
         onSelectColor={(c) => {
           setCurrentColor(c);
@@ -273,14 +429,27 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
         >
           {/* Render Saved Vector Strokes */}
-          {strokes.map((stroke) => (
-            <MemoizedStroke
-              key={stroke.id}
-              stroke={stroke}
-              containerWidth={containerWidth}
-              containerHeight={containerHeight}
-            />
-          ))}
+          {strokes.map((stroke) => {
+            const isDragging = stroke.id === draggedStrokeId;
+            const strokeToRender = isDragging
+              ? {
+                  ...stroke,
+                  points: stroke.points.map((pt) => ({
+                    x: Math.max(0, Math.min(1, pt.x + dragOffset.x)),
+                    y: Math.max(0, Math.min(1, pt.y + dragOffset.y)),
+                  })),
+                }
+              : stroke;
+
+            return (
+              <MemoizedStroke
+                key={stroke.id}
+                stroke={strokeToRender}
+                containerWidth={containerWidth}
+                containerHeight={containerHeight}
+              />
+            );
+          })}
 
           {/* Render Active Drawing Path */}
           <path
@@ -293,6 +462,21 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
             strokeLinejoin="round"
             style={{ display: 'none' }}
           />
+
+          {/* Render Selection Box */}
+          {selectionBox && (
+            <rect
+              x={selectionBox.x}
+              y={selectionBox.y}
+              width={selectionBox.width}
+              height={selectionBox.height}
+              fill="rgba(59, 130, 246, 0.05)"
+              stroke="#3B82F6"
+              strokeWidth={1.5}
+              strokeDasharray="4 4"
+              rx={4}
+            />
+          )}
 
           {/* Neon Dashed Indicator + Live Text Preview */}
           {floatingText.visible && (
@@ -324,6 +508,42 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         </svg>
       </div>
 
+      {/* Floating delete button for selected stroke */}
+      {selectionBox && (
+        <TouchableOpacity
+          onPress={() => {
+            if (selectedStrokeId) {
+              onRemoveStroke(selectedStrokeId);
+              setSelectedStrokeId(null);
+            }
+          }}
+          style={{
+            position: 'absolute',
+            left: Math.max(0, selectionBox.x + selectionBox.width - 12),
+            top: Math.max(0, selectionBox.y - 12),
+            zIndex: 25,
+            width: 24,
+            height: 24,
+            borderRadius: 12,
+            backgroundColor: COLORS.danger,
+            justifyContent: 'center',
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.2,
+            shadowRadius: 3,
+            elevation: 4,
+          }}
+          {...({
+            onPointerDown: (e: any) => e.stopPropagation(),
+            onPointerUp: (e: any) => e.stopPropagation(),
+            onClick: (e: any) => e.stopPropagation(),
+          } as any)}
+        >
+          <X size={12} color={COLORS.white} />
+        </TouchableOpacity>
+      )}
+
       {/* Floating Inline Text Input Card */}
       {floatingText.visible && (
         <View
@@ -334,10 +554,16 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
               left: floatingText.x + 12,
             },
           ]}
+          {...({
+            'data-floating-card': 'true',
+            onPointerDown: (e: any) => e.stopPropagation(),
+            onPointerUp: (e: any) => e.stopPropagation(),
+            onClick: (e: any) => e.stopPropagation(),
+          } as any)}
         >
           <TextInput
             style={styles.floatingInput}
-            placeholder="G\u00f5 n\u1ed9i dung t\u1ea1i \u0111\u00e2y..."
+            placeholder="Gõ nội dung tại đây..."
             placeholderTextColor={COLORS.gray400}
             value={floatingText.text}
             onChangeText={(text) => setFloatingText((prev) => ({ ...prev, text }))}

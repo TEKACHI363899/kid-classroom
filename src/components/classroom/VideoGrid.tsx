@@ -120,6 +120,13 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
       if (controlsRef.current && (controlsRef.current === target || controlsRef.current.contains(target))) {
         return;
       }
+      // Do not toggle if click is inside the canvas toolbar or the floating text card
+      if (
+        target.closest('#canvas-toolbar') || 
+        target.closest('[data-floating-card]')
+      ) {
+        return;
+      }
       if (
         target.closest('button') || 
         target.closest('a') || 

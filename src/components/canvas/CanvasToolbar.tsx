@@ -45,11 +45,17 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
   return (
     <View
+      nativeID="canvas-toolbar"
       style={[
         styles.toolbarContainer,
         isLandscape ? styles.toolbarLandscape : styles.toolbarPortrait,
         isFullscreen && styles.toolbarFullscreen,
       ]}
+      {...({
+        onPointerDown: (e: any) => e.stopPropagation(),
+        onPointerUp: (e: any) => e.stopPropagation(),
+        onClick: (e: any) => e.stopPropagation(),
+      } as any)}
     >
       {/* Tool Selector */}
       <View style={styles.sectionGroup}>

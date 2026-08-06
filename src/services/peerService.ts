@@ -192,7 +192,11 @@ export class PeerService {
     try {
       const constraints: MediaStreamConstraints = {
         audio: audio ? WEBRTC_AUDIO_CONSTRAINTS : false,
-        video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false,
+        video: video ? {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 30 }
+        } : false,
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -228,9 +232,20 @@ export class PeerService {
       }
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: 'always' } as MediaTrackConstraints,
+        video: {
+          cursor: 'always',
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 30, max: 30 }
+        } as MediaTrackConstraints,
         audio: false,
       });
+
+      // Set contentHint to 'text' to ensure sharpness of text and documents
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && 'contentHint' in videoTrack) {
+        videoTrack.contentHint = 'text';
+      }
 
       this.screenStream = stream;
 
@@ -377,8 +392,30 @@ export class PeerService {
       this.screenStream.getTracks().forEach((t) => t.stop());
       this.screenStream = null;
     }
+
+    // Explicitly close all active media connections before clearing
+    this.calls.forEach((call) => {
+      try {
+        call.close();
+      } catch (_) {}
+    });
     this.calls.clear();
+
+    this.screenCalls.forEach((call) => {
+      try {
+        call.close();
+      } catch (_) {}
+    });
+    this.screenCalls.clear();
+
+    // Close all data connections
+    this.dataConnections.forEach((conn) => {
+      try {
+        conn.close();
+      } catch (_) {}
+    });
     this.dataConnections.clear();
+
     if (this.peer) {
       this.peer.destroy();
       this.peer = null;

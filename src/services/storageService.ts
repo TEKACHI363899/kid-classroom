@@ -240,7 +240,9 @@ export const getTeacherAccounts = (): TeacherAccount[] => {
   if (!isWindowAvailable()) return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.TEACHERS);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     console.error('Error reading teachers from localStorage:', error);
     return [];
@@ -338,9 +340,12 @@ export const getTeacherStudents = (teacherId?: string): StudentAccount[] => {
       localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(DEFAULT_STUDENTS));
       return DEFAULT_STUDENTS;
     }
-    const allStudents: StudentAccount[] = JSON.parse(raw);
+    const allStudents = JSON.parse(raw);
+    if (!Array.isArray(allStudents)) {
+      return DEFAULT_STUDENTS;
+    }
     if (!teacherId) return allStudents;
-    return allStudents.filter((s) => s.teacherId === teacherId);
+    return allStudents.filter((s) => s && s.teacherId === teacherId);
   } catch (error) {
     console.error('Error fetching students:', error);
     return DEFAULT_STUDENTS;
@@ -401,29 +406,7 @@ export const registerStudentAccount = async (
     createdAt: new Date().toISOString(),
   };
 
-  // 1. Save locally
-  const updatedList = [newStudent, ...allStudents.filter((s) => s.id !== newStudent.id)];
-  if (isWindowAvailable()) {
-    try {
-      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(updatedList));
-    } catch (error) {
-      console.error('Failed to save student account:', error);
-    }
-  }
-
-  // 2. Cross-Window Broadcast via BroadcastChannel (0ms latency for Incognito tabs)
-  if (broadcastChannel) {
-    try {
-      broadcastChannel.postMessage({
-        type: 'SYNC_STUDENT_ACCOUNT',
-        payload: newStudent,
-      });
-    } catch (err) {
-      console.warn('BroadcastChannel send error:', err);
-    }
-  }
-
-  // 3. Supabase DB Upsert with Timeout Limit
+  // 1. Supabase DB Upsert first (if configured)
   if (isSupabaseConfigured()) {
     try {
       const res = await withTimeout<{ error: { message?: string } | null }>(
@@ -456,6 +439,28 @@ export const registerStudentAccount = async (
         success: false,
         message: `Lỗi kết nối Cloud Database: ${err instanceof Error ? err.message : String(err)}`
       };
+    }
+  }
+
+  // 2. Save locally only after cloud DB success
+  const updatedList = [newStudent, ...allStudents.filter((s) => s && s.id !== newStudent.id)];
+  if (isWindowAvailable()) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(updatedList));
+    } catch (error) {
+      console.error('Failed to save student account locally:', error);
+    }
+  }
+
+  // 3. Cross-Window Broadcast
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({
+        type: 'SYNC_STUDENT_ACCOUNT',
+        payload: newStudent,
+      });
+    } catch (err) {
+      console.warn('BroadcastChannel send error:', err);
     }
   }
 
@@ -576,13 +581,51 @@ export const getTeacherClassrooms = (teacherId?: string): Classroom[] => {
       localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(DEFAULT_CLASSROOMS));
       return DEFAULT_CLASSROOMS;
     }
-    const allRooms: Classroom[] = JSON.parse(raw);
+    const allRooms = JSON.parse(raw);
+    if (!Array.isArray(allRooms)) {
+      return DEFAULT_CLASSROOMS;
+    }
     if (!teacherId) return allRooms;
-    return allRooms.filter((r) => r.teacherId === teacherId);
+    return allRooms.filter((r) => r && r.teacherId === teacherId);
   } catch (error) {
     console.error('Error fetching classrooms:', error);
     return DEFAULT_CLASSROOMS;
   }
+};
+
+// Query classroom status online with local storage fallback
+export const getClassroomByCodeOnline = async (roomCode: string): Promise<Classroom | null> => {
+  const localRoom = getClassroomByCode(roomCode);
+  if (localRoom) return localRoom;
+
+  if (isSupabaseConfigured()) {
+    try {
+      const res = await withTimeout(
+        supabase
+          .from('classrooms')
+          .select('*')
+          .eq('room_code', roomCode.toUpperCase())
+          .maybeSingle(),
+        4000
+      );
+      if (res && !res.error && res.data) {
+        const r = res.data;
+        return {
+          id: r.id,
+          title: r.title,
+          teacherId: r.teacher_id,
+          roomCode: r.room_code,
+          scheduledStart: r.scheduled_start,
+          scheduledEnd: r.scheduled_end,
+          status: r.status as ClassroomStatus,
+          isActive: r.status === 'live',
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to fetch classroom online:', e);
+    }
+  }
+  return null;
 };
 
 export const fetchClassroomsFromSupabase = async (teacherId?: string): Promise<Classroom[]> => {

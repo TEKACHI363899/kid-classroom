@@ -36,14 +36,29 @@ export function pointsToSvgPath(
   containerWidth: number,
   containerHeight: number
 ): string {
-  if (points.length === 0) return '';
-  const first = denormalizeCoordinate(points[0].x, points[0].y, containerWidth, containerHeight);
-  let pathString = `M ${first.x.toFixed(2)} ${first.y.toFixed(2)}`;
+  if (!points || !Array.isArray(points) || points.length === 0) return '';
+  
+  const pathParts: string[] = [];
+  try {
+    const firstPoint = points[0];
+    if (firstPoint && typeof firstPoint.x === 'number' && typeof firstPoint.y === 'number') {
+      const first = denormalizeCoordinate(firstPoint.x, firstPoint.y, containerWidth, containerHeight);
+      pathParts.push(`M ${first.x.toFixed(2)} ${first.y.toFixed(2)}`);
+    } else {
+      return '';
+    }
 
-  for (let i = 1; i < points.length; i++) {
-    const pt = denormalizeCoordinate(points[i].x, points[i].y, containerWidth, containerHeight);
-    pathString += ` L ${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`;
+    for (let i = 1; i < points.length; i++) {
+      const pt = points[i];
+      if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+        const denorm = denormalizeCoordinate(pt.x, pt.y, containerWidth, containerHeight);
+        pathParts.push(`L ${denorm.x.toFixed(2)} ${denorm.y.toFixed(2)}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error normalizing coordinates in pointsToSvgPath:', error);
+    return '';
   }
 
-  return pathString;
+  return pathParts.join(' ');
 }

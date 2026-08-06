@@ -135,10 +135,19 @@ export class LivekitService {
   public async startScreenShare(): Promise<MediaStream | null> {
     if (!this.room) return null;
     try {
-      const publication = await this.room.localParticipant.setScreenShareEnabled(true);
+      const publication = await this.room.localParticipant.setScreenShareEnabled(true, {
+        audio: false,
+        resolution: { width: 1920, height: 1080, frameRate: 30 },
+        contentHint: 'text',
+      });
       const track = publication?.track;
 
       if (track && track.mediaStreamTrack) {
+        // Set contentHint to 'text' to ensure sharpness of text and documents
+        if ('contentHint' in track.mediaStreamTrack) {
+          track.mediaStreamTrack.contentHint = 'text';
+        }
+
         const stream = new MediaStream([track.mediaStreamTrack]);
         
         track.mediaStreamTrack.addEventListener('ended', () => {

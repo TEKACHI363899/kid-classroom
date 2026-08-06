@@ -19,6 +19,50 @@ export interface InteractiveCanvasProps {
   canDraw: boolean;
 }
 
+interface MemoizedStrokeProps {
+  stroke: CanvasStroke;
+  containerWidth: number;
+  containerHeight: number;
+}
+
+const MemoizedStroke = React.memo<MemoizedStrokeProps>(({ stroke, containerWidth, containerHeight }) => {
+  if (stroke.toolType === 'pencil') {
+    const pathData = pointsToSvgPath(stroke.points, containerWidth, containerHeight);
+    return (
+      <path
+        d={pathData}
+        stroke={stroke.color}
+        strokeWidth={stroke.strokeWidth}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    );
+  } else if (stroke.toolType === 'text' && stroke.points.length > 0) {
+    const pos = denormalizeCoordinate(
+      stroke.points[0].x,
+      stroke.points[0].y,
+      containerWidth,
+      containerHeight
+    );
+    return (
+      <text
+        x={pos.x}
+        y={pos.y}
+        fill={stroke.color}
+        fontSize={stroke.fontSize || 20}
+        fontWeight="bold"
+        fontFamily="Nunito, sans-serif"
+      >
+        {stroke.textContent}
+      </text>
+    );
+  }
+  return null;
+});
+
+MemoizedStroke.displayName = 'MemoizedStroke';
+
 export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   containerWidth,
   containerHeight,
@@ -223,43 +267,14 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
         >
           {/* Render Saved Vector Strokes */}
-          {strokes.map((stroke) => {
-            if (stroke.toolType === 'pencil') {
-              const pathData = pointsToSvgPath(stroke.points, containerWidth, containerHeight);
-              return (
-                <path
-                  key={stroke.id}
-                  d={pathData}
-                  stroke={stroke.color}
-                  strokeWidth={stroke.strokeWidth}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              );
-            } else if (stroke.toolType === 'text' && stroke.points.length > 0) {
-              const pos = denormalizeCoordinate(
-                stroke.points[0].x,
-                stroke.points[0].y,
-                containerWidth,
-                containerHeight
-              );
-              return (
-                <text
-                  key={stroke.id}
-                  x={pos.x}
-                  y={pos.y}
-                  fill={stroke.color}
-                  fontSize={stroke.fontSize || 20}
-                  fontWeight="bold"
-                  fontFamily="Nunito, sans-serif"
-                >
-                  {stroke.textContent}
-                </text>
-              );
-            }
-            return null;
-          })}
+          {strokes.map((stroke) => (
+            <MemoizedStroke
+              key={stroke.id}
+              stroke={stroke}
+              containerWidth={containerWidth}
+              containerHeight={containerHeight}
+            />
+          ))}
 
           {/* Render Active Drawing Path */}
           <path

@@ -56,6 +56,12 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const useLivekitRef = useRef<boolean>(useLivekit);
   useLivekitRef.current = useLivekit;
 
+  const currentUserRef = useRef<UserProfile>(currentUser);
+  currentUserRef.current = currentUser;
+  const isTeacherRef = useRef<boolean>(isTeacher);
+  isTeacherRef.current = isTeacher;
+  const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
   // Connection & Modals State
   const [connectionStatus, setConnectionStatus] = useState<string>('connected');
   const [exitModalVisible, setExitModalVisible] = useState<boolean>(false);
@@ -96,9 +102,17 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           },
         ];
       }
-      return prev.map((p) =>
-        p.id === currentUser.id ? { ...p, isMicOn, isCamOn } : p
-      );
+      let changed = false;
+      const next = prev.map((p) => {
+        if (p.id === currentUser.id) {
+          if (p.isMicOn !== isMicOn || p.isCamOn !== isCamOn || p.role !== currentUser.role || p.userName !== currentUser.fullName) {
+            changed = true;
+            return { ...p, isMicOn, isCamOn, role: currentUser.role, userName: currentUser.fullName };
+          }
+        }
+        return p;
+      });
+      return changed ? next : prev;
     });
   }, [currentUser, isMicOn, isCamOn, isTeacher]);
 
@@ -124,6 +138,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   permissionStateRef.current = permissionState;
 
   // Unified Room Status Realtime Channel (Handles Knock, Approve, Decline, End Room, and Peer Presence)
+  // Subscribed once per roomCode to eliminate memory leaks and websocket channel accumulation
   useEffect(() => {
     if (!roomCode) return;
 
@@ -134,7 +149,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
     // 1. CLASSROOM_ENDED (for students)
     channel.on('broadcast', { event: 'CLASSROOM_ENDED' }, () => {
-      if (!isTeacher) {
+      if (!isTeacherRef.current) {
         livekitService.disconnect();
         peerService.disconnect();
         setEndedByTeacherNoticeVisible(true);
@@ -143,7 +158,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
     // 2. KNOCK (for teachers)
     channel.on('broadcast', { event: 'KNOCK' }, ({ payload }) => {
-      if (isTeacher) {
+      if (isTeacherRef.current) {
         setKnockingStudents((prev) => {
           if (prev.some((s) => s.userId === payload.userId)) return prev;
           return [...prev, payload];
@@ -153,14 +168,14 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
     // 3. APPROVE (for students)
     channel.on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
-      if (!isTeacher && payload.targetUserId === currentUser.id) {
+      if (!isTeacherRef.current && payload.targetUserId === currentUserRef.current.id) {
         setWaitingStatus('approved');
       }
     });
 
     // 4. DECLINE (for students)
     channel.on('broadcast', { event: 'DECLINE' }, ({ payload }) => {
-      if (!isTeacher && payload.targetUserId === currentUser.id) {
+      if (!isTeacherRef.current && payload.targetUserId === currentUserRef.current.id) {
         setWaitingStatus('declined');
       }
     });
@@ -168,34 +183,66 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     // 5. PEER_PRESENCE (when approved or teacher)
     channel.on('broadcast', { event: 'PEER_PRESENCE' }, ({ payload }) => {
       if (waitingStatusRef.current !== 'approved') return;
-      if (payload.userId === currentUser.id) return;
+      if (payload.userId === currentUserRef.current.id) return;
 
       setParticipants((prev) => {
-        const cleaned = prev.filter((p) => p.userId !== payload.userId);
-        const exists = cleaned.some((p) => p.id === payload.connectionId);
-        if (exists) return cleaned;
+        const canDraw =
+          payload.role === 'teacher'
+            ? true
+            : permissionStateRef.current.globalCanDraw ||
+              permissionStateRef.current.studentPermissions[payload.userId] === true;
 
-        if (!useLivekitRef.current && isTeacher && isScreenSharingRef.current) {
-          peerService.callScreenToPeer(payload.connectionId);
+        const existingIdx = prev.findIndex((p) => p.id === payload.connectionId || p.userId === payload.userId);
+
+        if (existingIdx === -1) {
+          if (!useLivekitRef.current && isTeacherRef.current && isScreenSharingRef.current) {
+            peerService.callScreenToPeer(payload.connectionId);
+          }
+          return [
+            ...prev,
+            {
+              id: payload.connectionId,
+              userId: payload.userId,
+              userName: payload.userName,
+              role: payload.role,
+              isMicOn: payload.isMicOn,
+              isCamOn: payload.isCamOn,
+              isScreenSharing: payload.isScreenSharing || false,
+              canDraw,
+            },
+          ];
         }
 
-        return [
-          ...cleaned,
-          {
-            id: payload.connectionId,
-            userId: payload.userId,
-            userName: payload.userName,
-            role: payload.role,
-            isMicOn: payload.isMicOn,
-            isCamOn: payload.isCamOn,
-            isScreenSharing: payload.isScreenSharing || false,
-            canDraw:
-              payload.role === 'teacher'
-                ? true
-                : permissionStateRef.current.globalCanDraw ||
-                  permissionStateRef.current.studentPermissions[payload.userId] === true,
-          },
-        ];
+        const existing = prev[existingIdx];
+        const hasChanged =
+          existing.id !== payload.connectionId ||
+          existing.userId !== payload.userId ||
+          existing.userName !== payload.userName ||
+          existing.role !== payload.role ||
+          existing.isMicOn !== payload.isMicOn ||
+          existing.isCamOn !== payload.isCamOn ||
+          existing.isScreenSharing !== (payload.isScreenSharing || false) ||
+          existing.canDraw !== canDraw;
+
+        if (!hasChanged) {
+          return prev;
+        }
+
+        return prev.map((p, idx) =>
+          idx === existingIdx
+            ? {
+                ...p,
+                id: payload.connectionId,
+                userId: payload.userId,
+                userName: payload.userName,
+                role: payload.role,
+                isMicOn: payload.isMicOn,
+                isCamOn: payload.isCamOn,
+                isScreenSharing: payload.isScreenSharing || false,
+                canDraw,
+              }
+            : p
+        );
       });
 
       if (!useLivekitRef.current && peerService.getConnectionId < payload.connectionId) {
@@ -206,27 +253,39 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     // 6. PEER_UPDATE (when approved or teacher)
     channel.on('broadcast', { event: 'PEER_UPDATE' }, ({ payload }) => {
       if (waitingStatusRef.current !== 'approved') return;
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p.id === payload.connectionId || p.userId === payload.userId
-            ? { ...p, isMicOn: payload.isMicOn, isCamOn: payload.isCamOn }
-            : p
-        )
-      );
+      setParticipants((prev) => {
+        let changed = false;
+        const next = prev.map((p) => {
+          if (p.id === payload.connectionId || p.userId === payload.userId) {
+            if (p.isMicOn !== payload.isMicOn || p.isCamOn !== payload.isCamOn) {
+              changed = true;
+              return { ...p, isMicOn: payload.isMicOn, isCamOn: payload.isCamOn };
+            }
+          }
+          return p;
+        });
+        return changed ? next : prev;
+      });
     });
 
     // 7. SCREEN_SHARE_STATE (when approved or teacher)
     channel.on('broadcast', { event: 'SCREEN_SHARE_STATE' }, ({ payload }) => {
       if (waitingStatusRef.current !== 'approved') return;
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p.role === 'teacher'
-            ? { ...p, isScreenSharing: payload.isSharing }
-            : p
-        )
-      );
+      setParticipants((prev) => {
+        let changed = false;
+        const next = prev.map((p) => {
+          if (p.role === 'teacher') {
+            if (p.isScreenSharing !== payload.isSharing) {
+              changed = true;
+              return { ...p, isScreenSharing: payload.isSharing };
+            }
+          }
+          return p;
+        });
+        return changed ? next : prev;
+      });
 
-      if (!isTeacher && !payload.isSharing) {
+      if (!isTeacherRef.current && !payload.isSharing) {
         setScreenStream(null);
       }
     });
@@ -234,19 +293,30 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     // 8. PEER_LEAVE (when approved or teacher)
     channel.on('broadcast', { event: 'PEER_LEAVE' }, ({ payload }) => {
       if (waitingStatusRef.current !== 'approved') return;
-      setParticipants((prev) =>
-        prev.filter((p) => p.id !== payload.connectionId && p.userId !== payload.connectionId)
-      );
+      setParticipants((prev) => {
+        const exists = prev.some((p) => p.id === payload.connectionId || p.userId === payload.connectionId);
+        if (!exists) return prev;
+        return prev.filter((p) => p.id !== payload.connectionId && p.userId !== payload.connectionId);
+      });
     });
 
     // Subscribe to the channel
     channel.subscribe();
+    roomChannelRef.current = channel;
 
-    // Start presence broadcasting interval if approved or teacher
-    let presenceInterval: ReturnType<typeof setInterval> | null = null;
-    if (waitingStatus === 'approved') {
-      const broadcastPresence = () => {
-        channel.send({
+    return () => {
+      roomChannelRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [roomCode]);
+
+  // Periodically broadcast presence when approved (or teacher)
+  useEffect(() => {
+    if (!roomCode || waitingStatus !== 'approved') return;
+
+    const broadcastPresence = () => {
+      if (roomChannelRef.current) {
+        roomChannelRef.current.send({
           type: 'broadcast',
           event: 'PEER_PRESENCE',
           payload: {
@@ -258,49 +328,45 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             isCamOn: isCamOnRef.current,
             isScreenSharing: isScreenSharingRef.current,
           },
-        });
-      };
+        }).catch((e) => console.warn('Send presence error:', e));
+      }
+    };
 
-      broadcastPresence();
-      presenceInterval = setInterval(broadcastPresence, 3000);
-    }
+    broadcastPresence();
+    const presenceInterval = setInterval(broadcastPresence, 3000);
 
     return () => {
-      if (presenceInterval) {
-        clearInterval(presenceInterval);
-      }
+      clearInterval(presenceInterval);
 
-      if (waitingStatusRef.current === 'approved') {
-        channel.send({
+      // Send PEER_LEAVE when leaving or changing room status
+      if (roomChannelRef.current) {
+        roomChannelRef.current.send({
           type: 'broadcast',
           event: 'PEER_LEAVE',
           payload: {
             connectionId: useLivekitRef.current ? currentUser.id : peerService.getConnectionId,
           },
-        });
+        }).catch((e) => console.warn('Send leave error:', e));
       }
-
-      supabase.removeChannel(channel);
     };
-  }, [roomCode, isTeacher, currentUser, waitingStatus]);
+  }, [roomCode, waitingStatus, currentUser]);
 
-  // Student waiting room: KNOCK sender
+  // Student waiting room: KNOCK sender using the roomChannelRef to prevent duplicate channels
   useEffect(() => {
     if (isTeacher || waitingStatus !== 'waiting') return;
 
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-
     const sendKnock = () => {
-      channel.send({
-        type: 'broadcast',
-        event: 'KNOCK',
-        payload: {
-          userId: currentUser.id,
-          userName: currentUser.fullName,
-          connectionId: peerService.getConnectionId || `${currentUser.id}_temp`,
-        },
-      });
+      if (roomChannelRef.current) {
+        roomChannelRef.current.send({
+          type: 'broadcast',
+          event: 'KNOCK',
+          payload: {
+            userId: currentUser.id,
+            userName: currentUser.fullName,
+            connectionId: peerService.getConnectionId || `${currentUser.id}_temp`,
+          },
+        }).catch((e) => console.warn('Send knock error:', e));
+      }
     };
 
     // Send immediately and then every 3 seconds
@@ -316,8 +382,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   useEffect(() => {
     if (waitingStatus !== 'approved') return;
 
-    let isLivekitConnected = false;
-
     const initializePeerJS = () => {
       peerService.initialize(currentUser.id, {
         onConnectionStatusChange: (status) => {
@@ -327,14 +391,34 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           }
         },
         onLocalStream: (stream) => {
-          setParticipants((prev) =>
-            prev.map((p) => (p.id === currentUser.id ? { ...p, stream } : p))
-          );
+          setParticipants((prev) => {
+            let changed = false;
+            const next = prev.map((p) => {
+              if (p.id === currentUser.id) {
+                if (p.stream !== stream) {
+                  changed = true;
+                  return { ...p, stream };
+                }
+              }
+              return p;
+            });
+            return changed ? next : prev;
+          });
         },
         onRemoteStream: (peerId, stream) => {
-          setParticipants((prev) =>
-            prev.map((p) => (p.id === peerId ? { ...p, stream } : p))
-          );
+          setParticipants((prev) => {
+            let changed = false;
+            const next = prev.map((p) => {
+              if (p.id === peerId) {
+                if (p.stream !== stream) {
+                  changed = true;
+                  return { ...p, stream };
+                }
+              }
+              return p;
+            });
+            return changed ? next : prev;
+          });
         },
         onRemoteScreenStream: (stream) => {
           setScreenStream((prev) => (prev?.id === stream.id ? prev : stream));
@@ -343,7 +427,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           setScreenStream(null);
         },
         onPeerDisconnected: (peerId) => {
-          setParticipants((prev) => prev.filter((p) => p.id !== peerId));
+          setParticipants((prev) => {
+            const exists = prev.some((p) => p.id === peerId);
+            if (!exists) return prev;
+            return prev.filter((p) => p.id !== peerId);
+          });
         },
         onDataReceived: (data) => {
           const msg = data as { type: string };
@@ -361,18 +449,18 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
                 peerService.toggleVideo(false);
 
                 // Broadcast camera update
-                const channelName = `room_status_${roomCode}`;
-                const channel = supabase.channel(channelName);
-                channel.send({
-                  type: 'broadcast',
-                  event: 'PEER_UPDATE',
-                  payload: {
-                    userId: currentUser.id,
-                    connectionId: peerService.getConnectionId,
-                    isMicOn: isMicOnRef.current,
-                    isCamOn: false,
-                  },
-                }).catch((e) => console.warn('Broadcast update error', e));
+                if (roomChannelRef.current) {
+                  roomChannelRef.current.send({
+                    type: 'broadcast',
+                    event: 'PEER_UPDATE',
+                    payload: {
+                      userId: currentUser.id,
+                      connectionId: peerService.getConnectionId,
+                      isMicOn: isMicOnRef.current,
+                      isCamOn: false,
+                    },
+                  }).catch((e) => console.warn('Broadcast update error', e));
+                }
 
                 return false;
               }
@@ -383,20 +471,30 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         onScreenShareStopped: () => {
           setScreenStream(null);
           setIsScreenSharing(false);
-          setParticipants((prev) =>
-            prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: false } : p))
-          );
-
-          const channelName = `room_status_${roomCode}`;
-          const channel = supabase.channel(channelName);
-          channel.send({
-            type: 'broadcast',
-            event: 'SCREEN_SHARE_STATE',
-            payload: {
-              userId: currentUser.id,
-              isSharing: false,
-            },
+          setParticipants((prev) => {
+            let changed = false;
+            const next = prev.map((p) => {
+              if (p.id === currentUser.id) {
+                if (p.isScreenSharing !== false) {
+                  changed = true;
+                  return { ...p, isScreenSharing: false };
+                }
+              }
+              return p;
+            });
+            return changed ? next : prev;
           });
+
+          if (roomChannelRef.current) {
+            roomChannelRef.current.send({
+              type: 'broadcast',
+              event: 'SCREEN_SHARE_STATE',
+              payload: {
+                userId: currentUser.id,
+                isSharing: false,
+              },
+            }).catch((e) => console.warn('Send screen share stop error:', e));
+          }
         },
       });
 
@@ -427,9 +525,19 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             setConnectionStatus(state === 'connected' ? 'connected' : 'connecting');
           },
           onLocalStreamStarted: (stream) => {
-            setParticipants((prev) =>
-              prev.map((p) => (p.id === currentUser.id ? { ...p, stream } : p))
-            );
+            setParticipants((prev) => {
+              let changed = false;
+              const next = prev.map((p) => {
+                if (p.id === currentUser.id) {
+                  if (p.stream !== stream) {
+                    changed = true;
+                    return { ...p, stream };
+                  }
+                }
+                return p;
+              });
+              return changed ? next : prev;
+            });
           },
           onRemoteTrackSubscribed: (track, publication, participant) => {
             const stream = new MediaStream([track.mediaStreamTrack]);
@@ -438,9 +546,19 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             if (publication.source === 'screen_share') {
               setScreenStream(stream);
             } else {
-              setParticipants((prev) =>
-                prev.map((p) => (p.userId === peerId || p.id === peerId ? { ...p, stream } : p))
-              );
+              setParticipants((prev) => {
+                let changed = false;
+                const next = prev.map((p) => {
+                  if (p.userId === peerId || p.id === peerId) {
+                    if (p.stream !== stream) {
+                      changed = true;
+                      return { ...p, stream };
+                    }
+                  }
+                  return p;
+                });
+                return changed ? next : prev;
+              });
             }
           },
           onRemoteTrackUnsubscribed: (_track, publication, participant) => {
@@ -448,38 +566,61 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               setScreenStream(null);
             } else {
               const peerId = participant.identity;
-              setParticipants((prev) =>
-                prev.map((p) => (p.userId === peerId || p.id === peerId ? { ...p, stream: undefined } : p))
-              );
+              setParticipants((prev) => {
+                let changed = false;
+                const next = prev.map((p) => {
+                  if (p.userId === peerId || p.id === peerId) {
+                    if (p.stream !== undefined) {
+                      changed = true;
+                      return { ...p, stream: undefined };
+                    }
+                  }
+                  return p;
+                });
+                return changed ? next : prev;
+              });
             }
           },
           onParticipantDisconnected: (participant) => {
             const peerId = participant.identity;
-            setParticipants((prev) => prev.filter((p) => p.userId !== peerId && p.id !== peerId));
+            setParticipants((prev) => {
+              const exists = prev.some((p) => p.userId === peerId || p.id === peerId);
+              if (!exists) return prev;
+              return prev.filter((p) => p.userId !== peerId && p.id !== peerId);
+            });
           },
           onScreenShareStopped: () => {
             setScreenStream(null);
             setIsScreenSharing(false);
-            setParticipants((prev) =>
-              prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: false } : p))
-            );
-
-            const channelName = `room_status_${roomCode}`;
-            const channel = supabase.channel(channelName);
-            channel.send({
-              type: 'broadcast',
-              event: 'SCREEN_SHARE_STATE',
-              payload: {
-                userId: currentUser.id,
-                isSharing: false,
-              },
+            setParticipants((prev) => {
+              let changed = false;
+              const next = prev.map((p) => {
+                if (p.id === currentUser.id) {
+                  if (p.isScreenSharing !== false) {
+                    changed = true;
+                    return { ...p, isScreenSharing: false };
+                  }
+                }
+                return p;
+              });
+              return changed ? next : prev;
             });
+
+            if (roomChannelRef.current) {
+              roomChannelRef.current.send({
+                type: 'broadcast',
+                event: 'SCREEN_SHARE_STATE',
+                payload: {
+                  userId: currentUser.id,
+                  isSharing: false,
+                },
+              }).catch((e) => console.warn('Send screen share stop error:', e));
+            }
           },
         });
 
         if (success) {
           setUseLivekit(true);
-          isLivekitConnected = true;
           await livekitService.startLocalMedia(true, true);
           // Mute and disable video tracks initially to match UI states
           livekitService.toggleAudio(false);
@@ -497,11 +638,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     initConnection();
 
     return () => {
-      if (isLivekitConnected) {
-        livekitService.disconnect();
-      } else {
-        peerService.disconnect();
-      }
+      // Disconnect both services unconditionally to avoid any resource leaks
+      livekitService.disconnect();
+      peerService.disconnect();
     };
   }, [currentUser, isTeacher, waitingStatus, roomCode]);
 
@@ -514,19 +653,19 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       peerService.toggleAudio(nextState);
     }
 
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-    channel.send({
-      type: 'broadcast',
-      event: 'PEER_UPDATE',
-      payload: {
-        userId: currentUser.id,
-        connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
-        isMicOn: nextState,
-        isCamOn,
-      },
-    });
-  }, [isMicOn, isCamOn, useLivekit, roomCode, currentUser]);
+    if (roomChannelRef.current) {
+      roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'PEER_UPDATE',
+        payload: {
+          userId: currentUser.id,
+          connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
+          isMicOn: nextState,
+          isCamOn,
+        },
+      }).catch((e) => console.warn('Send peer update error:', e));
+    }
+  }, [isMicOn, isCamOn, useLivekit, currentUser]);
 
   const handleToggleCam = useCallback(() => {
     const nextState = !isCamOn;
@@ -537,19 +676,19 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       peerService.toggleVideo(nextState);
     }
 
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-    channel.send({
-      type: 'broadcast',
-      event: 'PEER_UPDATE',
-      payload: {
-        userId: currentUser.id,
-        connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
-        isMicOn,
-        isCamOn: nextState,
-      },
-    });
-  }, [isMicOn, isCamOn, useLivekit, roomCode, currentUser]);
+    if (roomChannelRef.current) {
+      roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'PEER_UPDATE',
+        payload: {
+          userId: currentUser.id,
+          connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
+          isMicOn,
+          isCamOn: nextState,
+        },
+      }).catch((e) => console.warn('Send peer update error:', e));
+    }
+  }, [isMicOn, isCamOn, useLivekit, currentUser]);
 
   const handleToggleScreenShare = useCallback(async () => {
     if (!isTeacher) return;
@@ -575,16 +714,16 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         );
 
         // Broadcast to other peers
-        const channelName = `room_status_${roomCode}`;
-        const channel = supabase.channel(channelName);
-        channel.send({
-          type: 'broadcast',
-          event: 'SCREEN_SHARE_STATE',
-          payload: {
-            userId: currentUser.id,
-            isSharing: true,
-          },
-        });
+        if (roomChannelRef.current) {
+          roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'SCREEN_SHARE_STATE',
+            payload: {
+              userId: currentUser.id,
+              isSharing: true,
+            },
+          }).catch((e) => console.warn('Send screen share start error:', e));
+        }
       }
     } else {
       if (useLivekit) {
@@ -595,21 +734,21 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: false } : p))
         );
 
-        const channelName = `room_status_${roomCode}`;
-        const channel = supabase.channel(channelName);
-        channel.send({
-          type: 'broadcast',
-          event: 'SCREEN_SHARE_STATE',
-          payload: {
-            userId: currentUser.id,
-            isSharing: false,
-          },
-        });
+        if (roomChannelRef.current) {
+          roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'SCREEN_SHARE_STATE',
+            payload: {
+              userId: currentUser.id,
+              isSharing: false,
+            },
+          }).catch((e) => console.warn('Send screen share stop error:', e));
+        }
       } else {
         peerService.stopScreenShare();
       }
     }
-  }, [isTeacher, isScreenSharing, useLivekit, participants, currentUser, roomCode]);
+  }, [isTeacher, isScreenSharing, useLivekit, participants, currentUser]);
 
   const handleCopyRoomLink = () => {
     const link = `${window.location.origin}/join/${roomCode}`;
@@ -623,17 +762,16 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const handleConfirmEndClassroom = async () => {
     await endClassroomByCode(roomCode);
 
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-    
-    try {
-      await channel.send({
-        type: 'broadcast',
-        event: 'CLASSROOM_ENDED',
-        payload: {},
-      });
-    } catch (e) {
-      console.warn('Failed to send CLASSROOM_ENDED broadcast:', e);
+    if (roomChannelRef.current) {
+      try {
+        await roomChannelRef.current.send({
+          type: 'broadcast',
+          event: 'CLASSROOM_ENDED',
+          payload: {},
+        });
+      } catch (e) {
+        console.warn('Failed to send CLASSROOM_ENDED broadcast:', e);
+      }
     }
 
     peerService.broadcastData({ type: 'CLASSROOM_ENDED' });
@@ -650,16 +788,16 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const handleApproveStudent = (student: { userId: string; userName: string; connectionId: string }) => {
     setKnockingStudents((prev) => prev.filter((s) => s.userId !== student.userId));
 
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-    channel.send({
-      type: 'broadcast',
-      event: 'APPROVE',
-      payload: {
-        targetUserId: student.userId,
-        targetConnectionId: student.connectionId,
-      },
-    });
+    if (roomChannelRef.current) {
+      roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'APPROVE',
+        payload: {
+          targetUserId: student.userId,
+          targetConnectionId: student.connectionId,
+        },
+      }).catch((e) => console.warn('Send approve error:', e));
+    }
 
     peerService.callPeer(student.connectionId);
   };
@@ -667,15 +805,15 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const handleDeclineStudent = (student: { userId: string; userName: string; connectionId: string }) => {
     setKnockingStudents((prev) => prev.filter((s) => s.userId !== student.userId));
 
-    const channelName = `room_status_${roomCode}`;
-    const channel = supabase.channel(channelName);
-    channel.send({
-      type: 'broadcast',
-      event: 'DECLINE',
-      payload: {
-        targetUserId: student.userId,
-      },
-    });
+    if (roomChannelRef.current) {
+      roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'DECLINE',
+        payload: {
+          targetUserId: student.userId,
+        },
+      }).catch((e) => console.warn('Send decline error:', e));
+    }
   };
 
   // Render Waiting Screen for students awaiting teacher approval

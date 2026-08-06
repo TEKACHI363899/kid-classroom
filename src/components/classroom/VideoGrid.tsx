@@ -30,11 +30,22 @@ const ScreenVideoView: React.FC<{ stream: MediaStream }> = ({ stream }) => {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !stream) return;
-    if (video.srcObject !== stream) {
-      video.srcObject = stream;
-      video.play().catch((err) => console.warn('Screen video play error', err));
+    if (!video) return;
+
+    if (stream) {
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
+        video.play().catch((err) => console.warn('Screen video play error', err));
+      }
+    } else {
+      video.srcObject = null;
     }
+
+    return () => {
+      if (video) {
+        video.srcObject = null;
+      }
+    };
   }, [stream]);
 
   return (
@@ -378,6 +389,12 @@ const ParticipantCard: React.FC<{
         video.srcObject = null;
       }
     }
+
+    return () => {
+      if (video) {
+        video.srcObject = null;
+      }
+    };
   }, [p.stream, p.isCamOn, p.isScreenSharing, isVisible]);
 
   return (

@@ -215,12 +215,22 @@ export class PeerService {
 
       this.calls.forEach((call) => {
         const sender = call.peerConnection.getSenders();
+        let requiresReconnect = false;
+        
         stream.getTracks().forEach((track) => {
           const existingSender = sender.find((s) => s.track?.kind === track.kind);
           if (existingSender) {
             existingSender.replaceTrack(track);
+          } else {
+            requiresReconnect = true;
           }
         });
+
+        if (requiresReconnect) {
+          try {
+            call.close();
+          } catch (e) {}
+        }
       });
 
       return stream;

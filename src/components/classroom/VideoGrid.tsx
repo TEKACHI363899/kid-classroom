@@ -422,6 +422,7 @@ const ParticipantCard: React.FC<{
   onToggleStudentDraw?: (studentId: string, currentCanDraw: boolean) => void;
 }> = ({ participant: p, isSelf, isTeacherOwner, onToggleStudentDraw }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(true);
 
@@ -457,15 +458,31 @@ const ParticipantCard: React.FC<{
       }
     }
 
+    const audio = audioRef.current;
+    if (audio) {
+      if (p.stream && !isSelf) {
+        if (audio.srcObject !== p.stream) {
+          audio.srcObject = p.stream;
+          audio.play().catch((e) => console.warn('Audio play warning', e));
+        }
+      } else {
+        audio.srcObject = null;
+      }
+    }
+
     return () => {
       if (video) {
         video.srcObject = null;
       }
+      if (audio) {
+        audio.srcObject = null;
+      }
     };
-  }, [p.stream, p.isCamOn, p.isScreenSharing, isVisible]);
+  }, [p.stream, p.isCamOn, p.isScreenSharing, isVisible, isSelf]);
 
   return (
     <div ref={containerRef}>
+      {!isSelf && <audio ref={audioRef} autoPlay playsInline />}
       <View style={styles.participantCard}>
       <View style={styles.participantAvatarArea}>
         {/* Version 4.0: Mobile-safe Video Feed with autoPlay playsInline muted */}
@@ -476,7 +493,7 @@ const ParticipantCard: React.FC<{
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               autoPlay
               playsInline
-              muted={isSelf}
+              muted={true}
             />
           </div>
         ) : (

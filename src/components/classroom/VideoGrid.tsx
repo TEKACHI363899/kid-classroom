@@ -327,90 +327,94 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
       </View>
 
       {/* Floating Fullscreen Timer */}
-      {isFullscreen && showControls && (
+      <div
+        style={{
+          position: 'absolute',
+          top: isFullscreen && showControls ? 16 : -50,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          opacity: isFullscreen && showControls ? 1 : 0,
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          zIndex: 1005,
+          pointerEvents: 'none',
+        }}
+      >
         <View
           style={{
-            position: 'absolute',
-            top: 16,
-            left: '50%',
-            transform: 'translateX(-50%)' as any,
-            zIndex: 1005,
-            pointerEvents: 'none',
-          }}
+            backgroundColor: 'rgba(255, 255, 255, 0.75)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            paddingHorizontal: 18,
+            paddingVertical: 10,
+            borderRadius: 20,
+            borderWidth: 1.5,
+            borderColor: COLORS.primary,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.1,
+            shadowRadius: 6,
+          } as any}
         >
-          <View
+          <Text
             style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.95)',
-              paddingHorizontal: 18,
-              paddingVertical: 10,
-              borderRadius: 20,
-              borderWidth: 1.5,
-              borderColor: COLORS.primary,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.1,
-              shadowRadius: 6,
+              fontSize: 16,
+              fontWeight: '800',
+              color: COLORS.primary,
+              fontFamily: 'monospace',
             }}
           >
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: '800',
-                color: COLORS.primary,
-                fontFamily: 'monospace',
-              }}
-            >
-              {formatTime(elapsedSeconds)}
-            </Text>
-          </View>
+            {formatTime(elapsedSeconds)}
+          </Text>
         </View>
-      )}
+      </div>
 
       {/* Floating Fullscreen Controls Bar (Mic/Cam Toggle) */}
-      {isFullscreen && showControls && (
-        <div
-          ref={controlsRef as any}
-          style={{
-            position: 'absolute',
-            bottom: 24,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            borderRadius: 24,
-            padding: '10px 20px',
-            boxShadow: '0 6px 12px rgba(0, 0, 0, 0.15)',
-            zIndex: 1005,
-            gap: 16,
-            pointerEvents: 'auto',
-          }}
+      <div
+        ref={controlsRef as any}
+        style={{
+          position: 'absolute',
+          right: isFullscreen && showControls ? 24 : -100,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          opacity: isFullscreen && showControls ? 1 : 0,
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(255, 255, 255, 0.75)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderRadius: 24,
+          padding: '20px 10px',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+          zIndex: 1005,
+          gap: 16,
+          pointerEvents: isFullscreen && showControls ? 'auto' : 'none',
+        }}
+      >
+        <TouchableOpacity
+          onPress={onToggleMic}
+          style={[styles.floatingControlBtn, !isMicOn && styles.btnDanger]}
         >
-          <TouchableOpacity
-            onPress={onToggleMic}
-            style={[styles.floatingControlBtn, !isMicOn && styles.btnDanger]}
-          >
-            {isMicOn ? (
-              <Mic size={ICON_SIZES.md} color={COLORS.white} />
-            ) : (
-              <MicOff size={ICON_SIZES.md} color={COLORS.white} />
-            )}
-          </TouchableOpacity>
+          {isMicOn ? (
+            <Mic size={ICON_SIZES.md} color={COLORS.white} />
+          ) : (
+            <MicOff size={ICON_SIZES.md} color={COLORS.white} />
+          )}
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={onToggleCam}
-            style={[styles.floatingControlBtn, !isCamOn && styles.btnDanger]}
-          >
-            {isCamOn ? (
-              <Video size={ICON_SIZES.md} color={COLORS.white} />
-            ) : (
-              <VideoOff size={ICON_SIZES.md} color={COLORS.white} />
-            )}
-          </TouchableOpacity>
-        </div>
-      )}
+        <TouchableOpacity
+          onPress={onToggleCam}
+          style={[styles.floatingControlBtn, !isCamOn && styles.btnDanger]}
+        >
+          {isCamOn ? (
+            <Video size={ICON_SIZES.md} color={COLORS.white} />
+          ) : (
+            <VideoOff size={ICON_SIZES.md} color={COLORS.white} />
+          )}
+        </TouchableOpacity>
+      </div>
     </div>
   );
 };
@@ -582,12 +586,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
-    borderWidth: 3,
-    borderColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+    borderWidth: 1, // Mỏng hơn, giống Apple
+    borderColor: COLORS.gray200,
     overflow: 'visible',
   },
   whiteboardBg: {

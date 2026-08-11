@@ -69,9 +69,9 @@ export const Button: React.FC<ButtonProps> = ({
           minHeight,
           backgroundColor: getBackgroundColor(),
           borderColor: getBorderColor(),
-          borderWidth: variant === 'outline' ? 2 : 0,
+          borderWidth: variant === 'outline' ? 1.5 : 0,
           borderRadius: BUTTON_BORDER_RADIUS,
-          paddingHorizontal: size === 'sm' ? 16 : size === 'lg' ? 28 : 22,
+          paddingHorizontal: size === 'sm' ? 14 : size === 'lg' ? 24 : 20,
         },
         style,
       ]}
@@ -104,15 +104,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   text: {
-    fontWeight: '800',
+    fontWeight: '600', // Apple HIG prefers Semibold for button text
     textAlign: 'center',
-    letterSpacing: 0.3,
+    letterSpacing: -0.4, // SF Pro style negative tracking
   },
   iconLeft: {
     marginRight: 10,

@@ -86,11 +86,12 @@ export const Modal: React.FC<ModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)', // Mờ hơn, phù hợp với blur
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-  },
+    backdropFilter: 'blur(10px)', // Apple Ultra Thin / Thin material
+  } as any,
   container: {
     width: '100%',
     maxWidth: 480,
@@ -98,10 +99,10 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 15,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
   },
   header: {
     flexDirection: 'row',
@@ -120,8 +121,9 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '700', // Apple HIG: Title 3
+    letterSpacing: -0.5,
     color: COLORS.textDark,
   },
   closeBtn: {

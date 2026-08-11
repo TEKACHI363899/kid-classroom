@@ -37,10 +37,6 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     return null;
   }
 
-  if (isFullscreen && !showControls) {
-    return null;
-  }
-
   const iconSize = isLandscape ? 16 : ICON_SIZES.md;
 
   return (
@@ -50,6 +46,12 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         styles.toolbarContainer,
         isLandscape ? styles.toolbarLandscape : styles.toolbarPortrait,
         isFullscreen && styles.toolbarFullscreen,
+        isFullscreen && {
+          opacity: showControls ? 1 : 0,
+          right: showControls ? 16 : -100,
+          pointerEvents: showControls ? 'auto' : 'none',
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        }
       ]}
       {...({
         onPointerDown: (e: any) => e.stopPropagation(),
@@ -149,18 +151,20 @@ const styles = StyleSheet.create({
     top: 12,
     flexDirection: 'column',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
     borderRadius: 16,
     paddingHorizontal: 8,
     paddingVertical: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
     elevation: 8,
     zIndex: 30,
     gap: 8,
-  },
+  } as any,
   sectionGroup: {
     flexDirection: 'column',
     alignItems: 'center',

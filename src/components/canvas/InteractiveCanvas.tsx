@@ -5,6 +5,8 @@ import type { CanvasStroke, StrokePoint, ToolType, FloatingTextInputState } from
 import { normalizeCoordinate, denormalizeCoordinate, pointsToSvgPath } from '../../utils/coordinateNormalizer';
 import { COLORS, CANVAS_COLORS } from '../../constants';
 import { CanvasToolbar } from './CanvasToolbar';
+import { PageManager } from './PageManager';
+import type { CanvasPage } from '../../types';
 
 export interface InteractiveCanvasProps {
   containerWidth: number;
@@ -19,6 +21,11 @@ export interface InteractiveCanvasProps {
   canDraw: boolean;
   isFullscreen?: boolean;
   showControls?: boolean;
+  pages: CanvasPage[];
+  activePageId: string;
+  onChangePage: (pageId: string) => void;
+  onAddPage: () => void;
+  onRemovePage: (pageId: string) => void;
 }
 
 interface MemoizedStrokeProps {
@@ -78,6 +85,11 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   canDraw,
   isFullscreen = false,
   showControls = false,
+  pages,
+  activePageId,
+  onChangePage,
+  onAddPage,
+  onRemovePage,
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscape = windowWidth > windowHeight;
@@ -109,9 +121,11 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   });
 
   // Bug 5: Eraser Hit-Testing (<15px distance to stroke points)
+  const activeStrokes = strokes.filter(s => (s.pageId || 'page-1') === activePageId);
+
   const eraseStrokesNearPoint = (absoluteX: number, absoluteY: number) => {
     const hitRadius = 15;
-    strokes.forEach((stroke) => {
+    activeStrokes.forEach((stroke) => {
       let isHit = false;
       stroke.points.forEach((pt) => {
         const absPt = denormalizeCoordinate(pt.x, pt.y, containerWidth, containerHeight);
@@ -167,7 +181,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       let minDistance = Infinity;
       const selectThreshold = 25; // px
 
-      strokes.forEach((stroke) => {
+      activeStrokes.forEach((stroke) => {
         if (stroke.toolType === 'text') {
           const pt = stroke.points[0];
           if (pt) {
@@ -247,6 +261,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         points: [...pointsRef.current],
         color: currentColor,
         strokeWidth: currentWidth,
+        pageId: activePageId,
       };
       onAddStroke(newStroke);
       pointsRef.current = [];
@@ -257,7 +272,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     } else if (isDrawingRef.current && currentTool === 'select' && draggedStrokeId) {
       isDrawingRef.current = false;
       if (hasDraggedRef.current && (Math.abs(dragOffset.x) > 0.001 || Math.abs(dragOffset.y) > 0.001)) {
-        const targetStroke = strokes.find((s) => s.id === draggedStrokeId);
+        const targetStroke = activeStrokes.find((s) => s.id === draggedStrokeId);
         if (targetStroke) {
           const updatedPoints = targetStroke.points.map((pt) => ({
             x: Math.max(0, Math.min(1, pt.x + dragOffset.x)),
@@ -293,6 +308,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         strokeWidth: currentWidth,
         textContent: floatingText.text.trim(),
         fontSize: currentWidth * 3 + 14,
+        pageId: activePageId,
       };
       onAddStroke(textStroke);
     }
@@ -329,7 +345,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   // Calculate selection bounding box for drawing selection indicator
   const selectionBox = React.useMemo(() => {
     if (!selectedStrokeId) return null;
-    const selectedStroke = strokes.find((s) => s.id === selectedStrokeId);
+    const selectedStroke = activeStrokes.find((s) => s.id === selectedStrokeId);
     if (!selectedStroke) return null;
 
     const isDragging = selectedStroke.id === draggedStrokeId;
@@ -375,7 +391,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       width: maxX - minX + padding * 2,
       height: maxY - minY + padding * 2,
     };
-  }, [selectedStrokeId, strokes, draggedStrokeId, dragOffset, containerWidth, containerHeight]);
+  }, [selectedStrokeId, activeStrokes, draggedStrokeId, dragOffset, containerWidth, containerHeight]);
 
   return (
     <View style={[styles.canvasWrapper, { width: containerWidth, height: containerHeight }]}>
@@ -423,14 +439,14 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       >
-        <svg
-          width={containerWidth}
-          height={containerHeight}
-          style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
-        >
-          {/* Render Saved Vector Strokes */}
-          {strokes.map((stroke) => {
-            const isDragging = stroke.id === draggedStrokeId;
+          <svg
+            width={containerWidth}
+            height={containerHeight}
+            style={{ width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
+          >
+            {/* Render Saved Vector Strokes */}
+            {activeStrokes.map((stroke) => {
+              const isDragging = stroke.id === draggedStrokeId;
             const strokeToRender = isDragging
               ? {
                   ...stroke,
@@ -602,6 +618,16 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           </View>
         </View>
       )}
+
+      {/* Page Manager */}
+      <PageManager
+        pages={pages}
+        activePageId={activePageId}
+        onChangePage={onChangePage}
+        onAddPage={onAddPage}
+        onRemovePage={onRemovePage}
+        isTeacher={isTeacher}
+      />
     </View>
   );
 };

@@ -41,8 +41,8 @@ export class LivekitService {
     this.events = events;
     try {
       this.room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
+        adaptiveStream: false,
+        dynacast: false,
       });
 
       this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {

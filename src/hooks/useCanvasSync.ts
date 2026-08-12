@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
-import type { CanvasStroke, DrawingPermissionState } from '../types';
+import type { CanvasStroke, DrawingPermissionState, CanvasPage, CanvasPageState } from '../types';
 import { peerService } from '../services/peerService';
 
 export interface UseCanvasSyncProps {
@@ -15,14 +15,20 @@ export interface UseCanvasSyncReturn {
   permissionState: DrawingPermissionState;
   addStroke: (stroke: CanvasStroke) => void;
   removeStroke: (strokeId: string) => void;
-  clearCanvas: () => void;
+  clearCanvas: (pageId?: string) => void;
   updateStudentPermission: (studentId: string, canDraw: boolean) => void;
   setGlobalCanDraw: (canDraw: boolean) => void;
   canCurrentUserDraw: boolean;
   receiveStroke: (stroke: CanvasStroke) => void;
   receiveRemoveStroke: (strokeId: string) => void;
-  receiveClear: () => void;
+  receiveClear: (pageId?: string) => void;
   receivePermission: (state: DrawingPermissionState) => void;
+  pages: CanvasPage[];
+  activePageId: string;
+  addPage: () => void;
+  changePage: (pageId: string) => void;
+  removePage: (pageId: string) => void;
+  receivePageState: (state: CanvasPageState) => void;
 }
 
 export function useCanvasSync({
@@ -32,6 +38,8 @@ export function useCanvasSync({
   isTeacher,
 }: UseCanvasSyncProps): UseCanvasSyncReturn {
   const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
+  const [pages, setPages] = useState<CanvasPage[]>([{ id: 'page-1', title: 'Trang 1' }]);
+  const [activePageId, setActivePageId] = useState<string>('page-1');
   const [permissionState, setPermissionState] = useState<DrawingPermissionState>({
     globalCanDraw: false,
     studentPermissions: {},
@@ -51,12 +59,21 @@ export function useCanvasSync({
     setStrokes((prev) => prev.filter((s) => s.id !== strokeId));
   }, []);
 
-  const receiveClear = useCallback(() => {
-    setStrokes([]);
+  const receiveClear = useCallback((pageId?: string) => {
+    if (pageId) {
+      setStrokes((prev) => prev.filter((s) => (s.pageId || 'page-1') !== pageId));
+    } else {
+      setStrokes([]);
+    }
   }, []);
 
   const receivePermission = useCallback((nextState: DrawingPermissionState) => {
     setPermissionState(nextState);
+  }, []);
+
+  const receivePageState = useCallback((state: CanvasPageState) => {
+    setPages(state.pages);
+    setActivePageId(state.activePageId);
   }, []);
 
   // Initialize Supabase Broadcast Channel
@@ -82,12 +99,18 @@ export function useCanvasSync({
           receiveRemoveStroke(strokeId);
         }
       })
-      .on('broadcast', { event: 'clear' }, () => {
-        receiveClear();
+      .on('broadcast', { event: 'clear' }, (payload) => {
+        const pageId = (payload.payload as { pageId?: string })?.pageId;
+        receiveClear(pageId);
       })
       .on('broadcast', { event: 'permission' }, (payload) => {
         if (payload.payload) {
           receivePermission(payload.payload as DrawingPermissionState);
+        }
+      })
+      .on('broadcast', { event: 'page_state' }, (payload) => {
+        if (payload.payload) {
+          receivePageState(payload.payload as CanvasPageState);
         }
       })
       .subscribe();
@@ -99,7 +122,7 @@ export function useCanvasSync({
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [roomId, receiveStroke, receiveRemoveStroke, receiveClear, receivePermission]);
+  }, [roomId, receiveStroke, receiveRemoveStroke, receiveClear, receivePermission, receivePageState]);
 
   const addStroke = useCallback(
     (newStroke: CanvasStroke) => {
@@ -108,7 +131,7 @@ export function useCanvasSync({
         return [...prev, newStroke];
       });
 
-      if (channelRef.current) {
+      if (channelRef.current?.state === 'joined') {
         channelRef.current.send({
           type: 'broadcast',
           event: 'stroke',
@@ -128,7 +151,7 @@ export function useCanvasSync({
     (strokeId: string) => {
       setStrokes((prev) => prev.filter((s) => s.id !== strokeId));
 
-      if (channelRef.current) {
+      if (channelRef.current?.state === 'joined') {
         channelRef.current.send({
           type: 'broadcast',
           event: 'remove_stroke',
@@ -144,22 +167,26 @@ export function useCanvasSync({
     []
   );
 
-  const clearCanvas = useCallback(() => {
+  const clearCanvas = useCallback((pageId?: string) => {
     if (!isTeacher) return;
 
-    setStrokes([]);
+    if (pageId) {
+      setStrokes((prev) => prev.filter((s) => (s.pageId || 'page-1') !== pageId));
+    } else {
+      setStrokes([]);
+    }
 
-    if (channelRef.current) {
+    if (channelRef.current?.state === 'joined') {
       channelRef.current.send({
         type: 'broadcast',
         event: 'clear',
-        payload: {},
+        payload: { pageId },
       });
     }
 
     peerService.broadcastData({
       type: 'clear',
-      payload: {},
+      payload: { pageId },
     });
   }, [isTeacher]);
 
@@ -176,7 +203,7 @@ export function useCanvasSync({
           },
         };
 
-        if (channelRef.current) {
+        if (channelRef.current?.state === 'joined') {
           channelRef.current.send({
             type: 'broadcast',
             event: 'permission',
@@ -205,7 +232,7 @@ export function useCanvasSync({
           globalCanDraw: canDraw,
         };
 
-        if (channelRef.current) {
+        if (channelRef.current?.state === 'joined') {
           channelRef.current.send({
             type: 'broadcast',
             event: 'permission',
@@ -224,6 +251,77 @@ export function useCanvasSync({
     [isTeacher]
   );
 
+  const changePage = useCallback((pageId: string) => {
+    if (!isTeacher) return;
+    setActivePageId(pageId);
+    
+    const nextState = { pages, activePageId: pageId };
+    
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'page_state',
+        payload: nextState,
+      });
+    }
+    peerService.broadcastData({
+      type: 'page_state',
+      payload: nextState,
+    });
+  }, [isTeacher, pages]);
+
+  const addPage = useCallback(() => {
+    if (!isTeacher) return;
+    const newPageId = `page-${Date.now()}`;
+    const newPage = { id: newPageId, title: `Trang ${pages.length + 1}` };
+    const nextPages = [...pages, newPage];
+    
+    setPages(nextPages);
+    setActivePageId(newPageId);
+
+    const nextState = { pages: nextPages, activePageId: newPageId };
+
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'page_state',
+        payload: nextState,
+      });
+    }
+    peerService.broadcastData({
+      type: 'page_state',
+      payload: nextState,
+    });
+  }, [isTeacher, pages]);
+
+  const removePage = useCallback((pageId: string) => {
+    if (!isTeacher) return;
+    if (pageId === 'page-1') return; // Cannot delete default page
+
+    const nextPages = pages.filter(p => p.id !== pageId);
+    let nextActiveId = activePageId;
+    if (activePageId === pageId) {
+      nextActiveId = 'page-1'; // fallback to page 1
+    }
+
+    setPages(nextPages);
+    setActivePageId(nextActiveId);
+
+    const nextState = { pages: nextPages, activePageId: nextActiveId };
+
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'page_state',
+        payload: nextState,
+      });
+    }
+    peerService.broadcastData({
+      type: 'page_state',
+      payload: nextState,
+    });
+  }, [isTeacher, pages, activePageId]);
+
   const canCurrentUserDraw = isTeacher
     ? true
     : (permissionState.globalCanDraw || (permissionState.studentPermissions[userId] === true || permissionState.studentPermissions[userName] === true));
@@ -241,5 +339,11 @@ export function useCanvasSync({
     receiveRemoveStroke,
     receiveClear,
     receivePermission,
+    pages,
+    activePageId,
+    addPage,
+    changePage,
+    removePage,
+    receivePageState,
   };
 }

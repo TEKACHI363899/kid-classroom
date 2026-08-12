@@ -24,6 +24,11 @@ export interface VideoGridProps {
   isCamOn?: boolean;
   onToggleCam?: () => void;
   elapsedSeconds?: number;
+  pages: import('../../types').CanvasPage[];
+  activePageId: string;
+  onChangePage: (pageId: string) => void;
+  onAddPage: () => void;
+  onRemovePage: (pageId: string) => void;
 }
 
 const ScreenVideoView: React.FC<{ stream: MediaStream }> = ({ stream }) => {
@@ -81,6 +86,11 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   isCamOn = false,
   onToggleCam = () => {},
   elapsedSeconds = 0,
+  pages,
+  activePageId,
+  onChangePage,
+  onAddPage,
+  onRemovePage,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
@@ -245,10 +255,11 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           ]}
         >
           {/* Background Screen Share Stream or Interactive Whiteboard */}
-          {screenStream ? (
-            <ScreenVideoView stream={screenStream} />
-          ) : (
-            <View style={styles.whiteboardBg} />
+          <View style={[styles.whiteboardBg, { display: screenStream && activePageId === 'page-1' ? 'none' : 'flex' }]} />
+          {screenStream && (
+            <View style={{ display: activePageId === 'page-1' ? 'flex' : 'none', width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
+              <ScreenVideoView stream={screenStream} />
+            </View>
           )}
 
           {/* Realtime Canvas Overlay — absolutely positioned inside whiteboard card */}
@@ -266,6 +277,11 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               canDraw={canDraw}
               isFullscreen={isFullscreen}
               showControls={showControls}
+              pages={pages}
+              activePageId={activePageId}
+              onChangePage={onChangePage}
+              onAddPage={onAddPage}
+              onRemovePage={onRemovePage}
             />
           </View>
 
@@ -373,20 +389,20 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         ref={controlsRef as any}
         style={{
           position: 'absolute',
-          right: isFullscreen && showControls ? 24 : -100,
-          top: '50%',
-          transform: 'translateY(-50%)',
+          bottom: isFullscreen && showControls ? 24 : -100,
+          left: '50%',
+          transform: 'translateX(-50%)',
           opacity: isFullscreen && showControls ? 1 : 0,
           transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: 'rgba(255, 255, 255, 0.75)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
           borderRadius: 24,
-          padding: '20px 10px',
+          padding: '10px 20px',
           boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
           zIndex: 1005,
           gap: 16,

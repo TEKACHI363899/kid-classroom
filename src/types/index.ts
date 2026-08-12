@@ -114,6 +114,17 @@ export interface CanvasStroke {
   strokeWidth: number;
   textContent?: string;
   fontSize?: number;
+  pageId?: string;
+}
+
+export interface CanvasPage {
+  id: string;
+  title: string;
+}
+
+export interface CanvasPageState {
+  pages: CanvasPage[];
+  activePageId: string;
 }
 
 export interface DrawingPermissionState {

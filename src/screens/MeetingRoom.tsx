@@ -174,6 +174,12 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     receiveRemoveStroke,
     receiveClear,
     receivePermission,
+    pages,
+    activePageId,
+    addPage,
+    changePage,
+    removePage,
+    receivePageState,
   } = useCanvasSync({
     roomId: roomCode,
     userId: currentUser.id,
@@ -189,6 +195,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   receiveClearRef.current = receiveClear;
   const receivePermissionRef = useRef(receivePermission);
   receivePermissionRef.current = receivePermission;
+  const receivePageStateRef = useRef(receivePageState);
+  receivePageStateRef.current = receivePageState;
 
   // Ref for permission state to avoid stale closures in unified channel listeners
   const permissionStateRef = useRef<typeof permissionState>(permissionState);
@@ -389,7 +397,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     if (!roomCode || waitingStatus !== 'approved') return;
 
     const broadcastPresence = () => {
-      if (roomChannelRef.current) {
+      if (roomChannelRef.current?.state === 'joined') {
         roomChannelRef.current.send({
           type: 'broadcast',
           event: 'PEER_PRESENCE',
@@ -413,7 +421,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       clearInterval(presenceInterval);
 
       // Send PEER_LEAVE when leaving or changing room status
-      if (roomChannelRef.current) {
+      if (roomChannelRef.current?.state === 'joined') {
         roomChannelRef.current.send({
           type: 'broadcast',
           event: 'PEER_LEAVE',
@@ -430,7 +438,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     if (isTeacher || waitingStatus !== 'waiting') return;
 
     const sendKnock = () => {
-      if (roomChannelRef.current) {
+      if (roomChannelRef.current?.state === 'joined') {
         roomChannelRef.current.send({
           type: 'broadcast',
           event: 'KNOCK',
@@ -519,9 +527,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           } else if (msg.type === 'remove_stroke') {
             receiveRemoveStrokeRef.current(msg.payload.strokeId);
           } else if (msg.type === 'clear') {
-            receiveClearRef.current();
+            receiveClearRef.current(msg.payload?.pageId);
           } else if (msg.type === 'permission') {
             receivePermissionRef.current(msg.payload);
+          } else if (msg.type === 'page_state') {
+            receivePageStateRef.current(msg.payload);
           }
         },
         onNetworkQualityChange: (peerId, status) => {
@@ -533,7 +543,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
                 peerService.toggleVideo(false);
 
                 // Broadcast camera update
-                if (roomChannelRef.current) {
+                if (roomChannelRef.current?.state === 'joined') {
                   roomChannelRef.current.send({
                     type: 'broadcast',
                     event: 'PEER_UPDATE',
@@ -569,7 +579,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             return changed ? next : prev;
           });
 
-          if (roomChannelRef.current) {
+          if (roomChannelRef.current?.state === 'joined') {
             roomChannelRef.current.send({
               type: 'broadcast',
               event: 'SCREEN_SHARE_STATE',
@@ -690,7 +700,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               return changed ? next : prev;
             });
 
-            if (roomChannelRef.current) {
+            if (roomChannelRef.current?.state === 'joined') {
               roomChannelRef.current.send({
                 type: 'broadcast',
                 event: 'SCREEN_SHARE_STATE',
@@ -815,7 +825,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       peerService.toggleAudio(nextState);
     }
 
-    if (roomChannelRef.current) {
+    if (roomChannelRef.current?.state === 'joined') {
       roomChannelRef.current.send({
         type: 'broadcast',
         event: 'PEER_UPDATE',
@@ -884,7 +894,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       peerService.toggleVideo(nextState);
     }
 
-    if (roomChannelRef.current) {
+    if (roomChannelRef.current?.state === 'joined') {
       roomChannelRef.current.send({
         type: 'broadcast',
         event: 'PEER_UPDATE',
@@ -900,6 +910,13 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
   const handleToggleScreenShare = useCallback(async () => {
     if (!isTeacher) return;
+
+    if (activePageId !== 'page-1') {
+      if (typeof window !== 'undefined') {
+        alert('Vui lòng quay lại Trang 1 để quản lý chia sẻ màn hình.');
+      }
+      return;
+    }
 
     if (!isScreenSharing) {
       let stream: MediaStream | null = null;
@@ -922,7 +939,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         );
 
         // Broadcast to other peers
-        if (roomChannelRef.current) {
+        if (roomChannelRef.current?.state === 'joined') {
           roomChannelRef.current.send({
             type: 'broadcast',
             event: 'SCREEN_SHARE_STATE',
@@ -942,7 +959,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: false } : p))
         );
 
-        if (roomChannelRef.current) {
+        if (roomChannelRef.current?.state === 'joined') {
           roomChannelRef.current.send({
             type: 'broadcast',
             event: 'SCREEN_SHARE_STATE',
@@ -956,7 +973,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         peerService.stopScreenShare();
       }
     }
-  }, [isTeacher, isScreenSharing, useLivekit, participants, currentUser]);
+  }, [isTeacher, isScreenSharing, useLivekit, participants, currentUser, activePageId]);
 
   const handleCopyRoomLink = () => {
     const link = `${window.location.origin}/join/${roomCode}`;
@@ -981,7 +998,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       localStorage.removeItem(`approved_room_${roomCode}`);
     }
 
-    if (roomChannelRef.current) {
+    if (roomChannelRef.current?.state === 'joined') {
       try {
         await roomChannelRef.current.send({
           type: 'broadcast',
@@ -1007,7 +1024,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const handleApproveStudent = (student: { userId: string; userName: string; connectionId: string }) => {
     setKnockingStudents((prev) => prev.filter((s) => s.userId !== student.userId));
 
-    if (roomChannelRef.current) {
+    if (roomChannelRef.current?.state === 'joined') {
       roomChannelRef.current.send({
         type: 'broadcast',
         event: 'APPROVE',
@@ -1024,7 +1041,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const handleDeclineStudent = (student: { userId: string; userName: string; connectionId: string }) => {
     setKnockingStudents((prev) => prev.filter((s) => s.userId !== student.userId));
 
-    if (roomChannelRef.current) {
+    if (roomChannelRef.current?.state === 'joined') {
       roomChannelRef.current.send({
         type: 'broadcast',
         event: 'DECLINE',
@@ -1110,6 +1127,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           isCamOn={isCamOn}
           onToggleCam={handleToggleCam}
           elapsedSeconds={elapsedSeconds}
+          pages={pages}
+          activePageId={activePageId}
+          onChangePage={changePage}
+          onAddPage={addPage}
+          onRemovePage={removePage}
         />
       </View>
 

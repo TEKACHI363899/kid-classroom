@@ -127,7 +127,6 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
     if (!canDraw) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rawX = e.clientX - rect.left;
@@ -206,7 +205,6 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
     if (!isDrawingRef.current || !canDraw) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rawX = e.clientX - rect.left;
@@ -238,8 +236,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
+  const handlePointerUp = () => {
     if (isDrawingRef.current && currentTool === 'pencil' && pointsRef.current.length > 0) {
       isDrawingRef.current = false;
       const newStroke: CanvasStroke = {

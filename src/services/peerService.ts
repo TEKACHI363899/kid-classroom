@@ -203,9 +203,10 @@ export class PeerService {
       const constraints: MediaStreamConstraints = {
         audio: audio ? WEBRTC_AUDIO_CONSTRAINTS : false,
         video: video ? {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 30 }
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
+          facingMode: 'user'
         } : false,
       };
 

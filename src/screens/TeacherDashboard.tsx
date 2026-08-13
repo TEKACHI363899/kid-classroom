@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
-import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus, Trash2, StopCircle, Eye, EyeOff } from 'lucide-react';
+import { Plus, Users, Calendar, Video, Copy, CheckCircle, Sparkles, UserPlus, Trash2, StopCircle, Eye, EyeOff, Key } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
-import type { StudentAccount, Classroom, UserProfile } from '../types';
+import type { StudentAccount, Classroom, UserProfile, TeacherAccount } from '../types';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import {
@@ -13,6 +13,7 @@ import {
   getTeacherStudents,
   registerStudentAccount,
   deleteTeacherStudent,
+  getTeacherAccounts,
 } from '../services/storageService';
 import { useLiveClassrooms } from '../hooks/useLiveClassrooms';
 
@@ -38,6 +39,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
 
   // Show/Hide Password State per student ID
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+
+  // Teacher Passwords Modal State
+  const [showTeacherPasswordsModal, setShowTeacherPasswordsModal] = useState<boolean>(false);
+  const [teacherAccounts, setTeacherAccounts] = useState<TeacherAccount[]>([]);
+  const [visibleTeacherPasswords, setVisibleTeacherPasswords] = useState<Record<string, boolean>>({});
+
+  const loadTeacherAccounts = () => {
+    setTeacherAccounts(getTeacherAccounts());
+    setShowTeacherPasswordsModal(true);
+  };
+  
+  const toggleTeacherPasswordVisibility = (tchId: string) => {
+    setVisibleTeacherPasswords((prev) => ({ ...prev, [tchId]: !prev[tchId] }));
+  };
 
   // Schedule Modal
   const [addScheduleVisible, setAddScheduleVisible] = useState<boolean>(false);
@@ -86,8 +101,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
     }
   };
 
-  const handleDeleteStudent = (stdId: string) => {
-    const updated = deleteTeacherStudent(stdId);
+  const handleDeleteStudent = async (stdId: string) => {
+    const updated = await deleteTeacherStudent(stdId);
     setStudents(updated);
   };
 
@@ -157,14 +172,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
             <Text style={styles.heroTitle}>Bảng Quản Lý Lớp Học Của Thầy</Text>
             <Text style={styles.heroSub}>Tạo danh sách học sinh, lên lịch buổi dạy và mở lớp 1-Click</Text>
           </View>
-          <Button
-            label="Mở Phòng Học Ngay"
-            icon={Video}
-            variant="success"
-            onPress={() => {
-              onStartRoom('MATH101', 'Lớp Học Tương Tác Trực Tiếp');
-            }}
-          />
+          <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+            <Button
+              label="Quản Lý Mật Khẩu"
+              icon={Key}
+              variant="secondary"
+              onPress={loadTeacherAccounts}
+            />
+            <Button
+              label="Mở Phòng Học Ngay"
+              icon={Video}
+              variant="success"
+              onPress={() => {
+                onStartRoom('MATH101', 'Lớp Học Tương Tác Trực Tiếp');
+              }}
+            />
+          </View>
         </View>
 
         {/* Section 1: Student Roster Management */}

@@ -564,7 +564,7 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
   };
 };
 
-export const deleteTeacherStudent = (studentId: string, _teacherId?: string): StudentAccount[] => {
+export const deleteTeacherStudent = async (studentId: string, _teacherId?: string): Promise<StudentAccount[]> => {
   const allStudents = getTeacherStudents();
   const updated = allStudents.filter((s) => s.id !== studentId);
   if (isWindowAvailable()) {
@@ -577,9 +577,7 @@ export const deleteTeacherStudent = (studentId: string, _teacherId?: string): St
 
   if (isSupabaseConfigured()) {
     try {
-      withTimeout(supabase.from('students').delete().eq('id', studentId), 6000).catch((err) => {
-        console.warn('Supabase delete student background error:', err);
-      });
+      await withTimeout(supabase.from('students').delete().eq('id', studentId), 6000);
     } catch (err) {
       console.warn('Supabase delete student error:', err);
     }

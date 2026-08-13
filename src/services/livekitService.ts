@@ -104,6 +104,7 @@ export class LivekitService {
           // Publish local camera track using global helper
           const videoTrack = await createLocalVideoTrack({
             resolution: { width: 1280, height: 720, frameRate: 30 },
+            facingMode: 'user',
           });
           this.localVideoTrack = videoTrack;
           await this.room.localParticipant.publishTrack(videoTrack);

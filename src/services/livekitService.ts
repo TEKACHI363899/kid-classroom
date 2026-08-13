@@ -23,7 +23,7 @@ export interface LivekitServiceEvents {
   ) => void;
   onParticipantDisconnected?: (participant: RemoteParticipant) => void;
   onLocalStreamStarted?: (stream: MediaStream) => void;
-  onConnectionStateChange?: (state: 'connected' | 'connecting' | 'disconnected' | 'reconnecting') => void;
+  onConnectionStateChange?: (state: 'connected' | 'connecting' | 'disconnected' | 'reconnecting' | 'permission_denied') => void;
   onScreenShareStopped?: () => void;
 }
 
@@ -111,7 +111,11 @@ export class LivekitService {
           if (videoTrack.mediaStreamTrack) {
             mediaStream.addTrack(videoTrack.mediaStreamTrack);
           }
-        } catch (error) {
+        } catch (error: unknown) {
+          const err = error as { name?: string };
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            this.events.onConnectionStateChange?.('permission_denied');
+          }
           console.warn('Could not initialize video track (e.g. no camera device):', error);
         }
       }
@@ -150,7 +154,11 @@ export class LivekitService {
           if (audioTrack.mediaStreamTrack) {
             mediaStream.addTrack(audioTrack.mediaStreamTrack);
           }
-        } catch (error) {
+        } catch (error: unknown) {
+          const err = error as { name?: string };
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            this.events.onConnectionStateChange?.('permission_denied');
+          }
           console.warn('Could not initialize audio track (e.g. no microphone device):', error);
         }
       }

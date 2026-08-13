@@ -616,7 +616,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
         const success = await livekitService.initialize(data.livekitUrl, data.token, {
           onConnectionStateChange: (state) => {
-            setConnectionStatus(state === 'connected' ? 'connected' : 'connecting');
+            if (state === 'permission_denied') {
+              setPermissionModalVisible(true);
+            } else {
+              setConnectionStatus(state === 'connected' ? 'connected' : 'connecting');
+            }
           },
           onLocalStreamStarted: (stream) => {
             setParticipants((prev) => {

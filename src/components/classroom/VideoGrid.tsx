@@ -291,7 +291,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
             style={{
               position: 'absolute',
               top: 16,
-              left: 16,
+              right: 16,
               zIndex: 999,
               backgroundColor: 'rgba(255, 255, 255, 0.95)',
               padding: 10,
@@ -522,11 +522,15 @@ const ParticipantCard: React.FC<{
 
     let source: MediaStreamAudioSourceNode | null = null;
     try {
-      source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks));
+      source = audioCtx.createMediaStreamSource(p.stream);
       source.connect(analyser);
     } catch (err) {
       console.warn('Cannot create media stream source', err);
       return;
+    }
+
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
     }
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);

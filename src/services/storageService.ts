@@ -348,7 +348,7 @@ export const loginTeacher = async (email: string, password: string): Promise<Aut
   };
 };
 
-export const getTeacherStudents = (teacherId?: string): StudentAccount[] => {
+export const getTeacherStudents = (_teacherId?: string): StudentAccount[] => {
   if (!isWindowAvailable()) return DEFAULT_STUDENTS;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.STUDENTS);
@@ -360,8 +360,8 @@ export const getTeacherStudents = (teacherId?: string): StudentAccount[] => {
     if (!Array.isArray(allStudents)) {
       return DEFAULT_STUDENTS;
     }
-    if (!teacherId) return allStudents;
-    return allStudents.filter((s) => s && s.teacherId === teacherId);
+    if (!_teacherId) return allStudents;
+    return allStudents; // removed constraint: return all students
   } catch (error) {
     console.error('Error fetching students:', error);
     return DEFAULT_STUDENTS;
@@ -564,7 +564,7 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
   };
 };
 
-export const deleteTeacherStudent = (studentId: string, teacherId?: string): StudentAccount[] => {
+export const deleteTeacherStudent = (studentId: string, _teacherId?: string): StudentAccount[] => {
   const allStudents = getTeacherStudents();
   const updated = allStudents.filter((s) => s.id !== studentId);
   if (isWindowAvailable()) {
@@ -585,11 +585,11 @@ export const deleteTeacherStudent = (studentId: string, teacherId?: string): Stu
     }
   }
 
-  return teacherId ? updated.filter((s) => s.teacherId === teacherId) : updated;
+  return updated; // removed teacherId constraint
 };
 
 // Classroom Management Functions
-export const getTeacherClassrooms = (teacherId?: string): Classroom[] => {
+export const getTeacherClassrooms = (_teacherId?: string): Classroom[] => {
   if (!isWindowAvailable()) return DEFAULT_CLASSROOMS;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CLASSROOMS);
@@ -601,8 +601,8 @@ export const getTeacherClassrooms = (teacherId?: string): Classroom[] => {
     if (!Array.isArray(allRooms)) {
       return DEFAULT_CLASSROOMS;
     }
-    if (!teacherId) return allRooms;
-    return allRooms.filter((r) => r && r.teacherId === teacherId);
+    if (!_teacherId) return allRooms;
+    return allRooms; // removed constraint: return all classrooms
   } catch (error) {
     console.error('Error fetching classrooms:', error);
     return DEFAULT_CLASSROOMS;
@@ -644,19 +644,17 @@ export const getClassroomByCodeOnline = async (roomCode: string): Promise<Classr
   return null;
 };
 
-export const fetchClassroomsFromSupabase = async (teacherId?: string): Promise<Classroom[]> => {
+export const fetchClassroomsFromSupabase = async (_teacherId?: string): Promise<Classroom[]> => {
   if (!isSupabaseConfigured()) {
-    return getTeacherClassrooms(teacherId);
+    return getTeacherClassrooms(_teacherId);
   }
   try {
     let query = supabase.from('classrooms').select('*');
-    if (teacherId) {
-      query = query.eq('teacher_id', teacherId);
-    }
+    // removed query.eq('teacher_id', teacherId) to fetch all classrooms
     const res = await withTimeout(query, 6000);
     if (res && res.error) {
       console.error('Error fetching classrooms from Supabase:', res.error);
-      return getTeacherClassrooms(teacherId);
+      return getTeacherClassrooms(_teacherId);
     }
     if (res && res.data) {
       const mapped: Classroom[] = res.data.map((r) => ({
@@ -677,7 +675,7 @@ export const fetchClassroomsFromSupabase = async (teacherId?: string): Promise<C
   } catch (err) {
     console.error('Exception fetching classrooms from Supabase:', err);
   }
-  return getTeacherClassrooms(teacherId);
+  return getTeacherClassrooms(_teacherId);
 };
 
 export const formatScheduledTime = (isoString: string): string => {

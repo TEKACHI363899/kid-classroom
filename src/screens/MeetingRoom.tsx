@@ -740,7 +740,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     initConnection();
 
     return () => {
-      // Disconnect both services unconditionally to avoid any resource leaks
+      // Disconnect both services unconditionally to avoid any resource leakssss
       livekitService.disconnect();
       peerService.disconnect();
     };

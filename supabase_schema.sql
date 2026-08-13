@@ -59,3 +59,6 @@ CREATE POLICY "Allow public all profiles" ON public.profiles FOR ALL USING (true
 CREATE POLICY "Allow public all students" ON public.students FOR ALL USING (true);
 CREATE POLICY "Allow public all classrooms" ON public.classrooms FOR ALL USING (true);
 CREATE POLICY "Allow public all classroom_students" ON public.classroom_students FOR ALL USING (true);
+
+-- 7. Enable Realtime for Classrooms table
+ALTER PUBLICATION supabase_realtime ADD TABLE public.classrooms;

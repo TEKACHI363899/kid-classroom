@@ -445,6 +445,7 @@ const ParticipantCard: React.FC<{
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(true);
+  const [audioLevel, setAudioLevel] = useState(0);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return;
@@ -500,6 +501,78 @@ const ParticipantCard: React.FC<{
     };
   }, [p.stream, p.isCamOn, p.isScreenSharing, isVisible, isSelf]);
 
+  useEffect(() => {
+    if (!p.stream || !p.isMicOn) {
+      setAudioLevel(0);
+      return;
+    }
+
+    const audioTracks = p.stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      setAudioLevel(0);
+      return;
+    }
+
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const audioCtx = new AudioContext();
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.5;
+
+    let source: MediaStreamAudioSourceNode | null = null;
+    try {
+      source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks));
+      source.connect(analyser);
+    } catch (err) {
+      console.warn('Cannot create media stream source', err);
+      return;
+    }
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    let intervalId: any;
+
+    const updateLevel = () => {
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      const level = Math.min(1, average / 100);
+      
+      setAudioLevel(prev => {
+        if (Math.abs(prev - level) > 0.05) return level;
+        return prev;
+      });
+    };
+
+    intervalId = setInterval(updateLevel, 100);
+
+    return () => {
+      clearInterval(intervalId);
+      source?.disconnect();
+      if (audioCtx.state !== 'closed') {
+        audioCtx.close().catch(console.warn);
+      }
+      setAudioLevel(0);
+    };
+  }, [p.stream, p.isMicOn]);
+
+  const isSpeaking = audioLevel > 0.05;
+  const glow = 10 + audioLevel * 15;
+  const borderStyle = isSpeaking ? {
+    borderColor: `rgba(76, 175, 80, ${0.5 + audioLevel/2})`,
+    borderWidth: '3px',
+    borderStyle: 'solid',
+    boxShadow: `0 0 ${glow}px ${glow/3}px rgba(76, 175, 80, ${0.3 + audioLevel/2})`,
+  } : {
+    borderColor: 'transparent',
+    borderWidth: '3px',
+    borderStyle: 'solid',
+    boxShadow: 'none',
+  };
+
   return (
     <div ref={containerRef}>
       {!isSelf && <audio ref={audioRef} autoPlay playsInline />}
@@ -507,7 +580,7 @@ const ParticipantCard: React.FC<{
       <View style={styles.participantAvatarArea}>
         {/* Version 4.0: Mobile-safe Video Feed with autoPlay playsInline muted */}
         {p.isCamOn && p.stream && !p.isScreenSharing ? (
-          <div style={{ width: 90, height: 90, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' }}>
+          <div style={{ width: 117, height: 117, borderRadius: 26, overflow: 'hidden', backgroundColor: '#000', ...borderStyle, transition: 'all 0.1s ease-in-out', boxSizing: 'border-box' }}>
             <video
               ref={videoRef}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -517,18 +590,23 @@ const ParticipantCard: React.FC<{
             />
           </div>
         ) : (
-          <View
-            style={[
-              styles.avatarCircle,
-              { backgroundColor: p.role === 'teacher' ? COLORS.purple : COLORS.primary },
-            ]}
+          <div
+            style={{
+              ...styles.avatarCircle,
+              backgroundColor: p.role === 'teacher' ? COLORS.purple : COLORS.primary,
+              ...borderStyle,
+              transition: 'all 0.1s ease-in-out',
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
           >
             {p.role === 'teacher' ? (
               <ShieldCheck size={ICON_SIZES.md} color={COLORS.white} />
             ) : (
               <User size={ICON_SIZES.md} color={COLORS.white} />
             )}
-          </View>
+          </div>
         )}
 
         {/* Status Indicators */}
@@ -641,7 +719,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   participantCard: {
-    width: 120,
+    width: 156,
     backgroundColor: COLORS.white,
     borderRadius: 16,
     padding: 10,
@@ -657,9 +735,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   avatarCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 20,
+    width: 117,
+    height: 117,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
   },

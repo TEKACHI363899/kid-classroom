@@ -634,19 +634,21 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             });
           },
           onRemoteTrackSubscribed: (track, publication, participant) => {
-            const stream = new MediaStream([track.mediaStreamTrack]);
             const peerId = participant.identity;
 
             if (publication.source === 'screen_share') {
-              setScreenStream(stream);
+              setScreenStream(new MediaStream([track.mediaStreamTrack]));
             } else {
               setParticipants((prev) => {
                 let changed = false;
                 const next = prev.map((p) => {
                   if (p.userId === peerId || p.id === peerId) {
-                    if (p.stream !== stream) {
+                    const existingTracks = p.stream ? p.stream.getTracks() : [];
+                    // Avoid duplicating tracks
+                    if (!existingTracks.find((t) => t.id === track.mediaStreamTrack.id)) {
+                      const newStream = new MediaStream([...existingTracks, track.mediaStreamTrack]);
                       changed = true;
-                      return { ...p, stream };
+                      return { ...p, stream: newStream };
                     }
                   }
                   return p;
@@ -655,7 +657,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               });
             }
           },
-          onRemoteTrackUnsubscribed: (_track, publication, participant) => {
+          onRemoteTrackUnsubscribed: (track, publication, participant) => {
             if (publication.source === 'screen_share') {
               setScreenStream(null);
             } else {
@@ -664,9 +666,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
                 let changed = false;
                 const next = prev.map((p) => {
                   if (p.userId === peerId || p.id === peerId) {
-                    if (p.stream !== undefined) {
+                    if (p.stream) {
+                      const remainingTracks = p.stream.getTracks().filter((t) => t.id !== track.mediaStreamTrack.id);
                       changed = true;
-                      return { ...p, stream: undefined };
+                      const newStream = remainingTracks.length > 0 ? new MediaStream(remainingTracks) : undefined;
+                      return { ...p, stream: newStream };
                     }
                   }
                   return p;

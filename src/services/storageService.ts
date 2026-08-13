@@ -328,13 +328,13 @@ export const loginTeacher = async (email: string, password: string): Promise<Aut
     (t) => t.email.toLowerCase() === normalizedEmail && t.passwordHash === trimmedPassword
   );
 
-  if (!teacher && email !== 'teacher@kidclass.edu.vn') {
+  if (!teacher) {
     return { success: false, message: 'Email hoặc mật khẩu không chính xác.' };
   }
 
   const userProfile: UserProfile = {
-    id: teacher ? teacher.id : 'tch-101',
-    fullName: teacher ? teacher.fullName : 'Thầy Ngô Thành Đạt',
+    id: teacher.id,
+    fullName: teacher.fullName,
     role: 'teacher',
     email: normalizedEmail,
   };

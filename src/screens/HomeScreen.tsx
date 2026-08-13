@@ -15,16 +15,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [roomCode, setRoomCode] = useState<string>('MATH101');
 
   // Student Credentials State
-  const [studentUsername, setStudentUsername] = useState<string>('hocsinhan');
-  const [studentPassword, setStudentPassword] = useState<string>('123456');
+  const [studentUsername, setStudentUsername] = useState<string>('');
+  const [studentPassword, setStudentPassword] = useState<string>('');
   const [rememberStudent, setRememberStudent] = useState<boolean>(true);
 
   // Teacher Auth Mode State: 'login' | 'register'
   const [teacherAuthMode, setTeacherAuthMode] = useState<'login' | 'register'>('login');
 
   // Teacher Form State
-  const [loginEmail, setLoginEmail] = useState<string>('teacher@kidclass.edu.vn');
-  const [loginPassword, setLoginPassword] = useState<string>('123456');
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
   const [rememberTeacher, setRememberTeacher] = useState<boolean>(true);
 
   // Teacher Registration Form State

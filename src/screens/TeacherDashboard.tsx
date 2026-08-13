@@ -429,6 +429,56 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
           }}
         />
       </Modal>
+      {/* Teacher Passwords Modal */}
+      <Modal
+        visible={showTeacherPasswordsModal}
+        title="Quản Lý Tài Khoản & Mật Khẩu Giáo Viên"
+        onClose={() => setShowTeacherPasswordsModal(false)}
+      >
+        <View style={styles.modalForm}>
+          {teacherAccounts.length === 0 ? (
+            <Text style={{ textAlign: 'center', color: COLORS.gray600, marginVertical: 20 }}>
+              Không tìm thấy tài khoản giáo viên nào.
+            </Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 400 }}>
+              {teacherAccounts.map((tch) => {
+                const showPass = visibleTeacherPasswords[tch.id] || false;
+                return (
+                  <View key={tch.id} style={{ ...styles.studentCard, marginBottom: 10 }}>
+                    <View style={styles.studentCardHeader}>
+                      <View style={{ ...styles.studentAvatar, backgroundColor: COLORS.purple + '20' }}>
+                        <Sparkles size={ICON_SIZES.md} color={COLORS.purple} />
+                      </View>
+                      <View style={styles.studentDetails}>
+                        <Text style={styles.studentName}>{tch.fullName}</Text>
+                        <Text style={styles.credentialsText}>Email: <Text style={styles.boldCred}>{tch.email}</Text></Text>
+                        <View style={styles.passRow}>
+                          <Text style={styles.credentialsText}>
+                            Mật khẩu: <Text style={styles.boldCred}>{showPass ? tch.passwordHash : '••••••••'}</Text>
+                          </Text>
+                          <TouchableOpacity onPress={() => toggleTeacherPasswordVisibility(tch.id)} style={styles.eyeBtn}>
+                            {showPass ? (
+                              <EyeOff size={16} color={COLORS.gray600} />
+                            ) : (
+                              <Eye size={16} color={COLORS.purple} />
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+          <Button
+            label="Đóng Lại"
+            variant="primary"
+            onPress={() => setShowTeacherPasswordsModal(false)}
+          />
+        </View>
+      </Modal>
     </ScrollView>
   );
 };

@@ -695,7 +695,7 @@ export const formatScheduledTime = (isoString: string): string => {
     const minutes = date.getMinutes().toString().padStart(2, '0');
     
     return `${dayOfWeek}, ${day}/${month} lúc ${hours}:${minutes}`;
-  } catch (e) {
+  } catch {
     return 'Chưa rõ lịch';
   }
 };

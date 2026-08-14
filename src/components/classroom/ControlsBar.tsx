@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import {
   Mic,
@@ -51,6 +51,18 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
     return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   });
 
+  const lastClickTimesRef = useRef<Record<string, number>>({});
+
+  const throttledAction = useCallback((key: string, action: () => void, cooldownMs: number = 350) => {
+    const now = Date.now();
+    const lastTime = lastClickTimesRef.current[key] || 0;
+    if (now - lastTime < cooldownMs) {
+      return;
+    }
+    lastClickTimesRef.current[key] = now;
+    action();
+  }, []);
+
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleResize = () => {
@@ -73,14 +85,15 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           zIndex: 9999,
           borderTopWidth: 1.5,
           borderTopColor: COLORS.gray200,
-          paddingBottom: 4, // Leave small safe area space
+          paddingBottom: 4,
         },
       ]}
     >
       <View style={styles.controlsGroup}>
         {/* Mic Button */}
         <TouchableOpacity
-          onPress={onToggleMic}
+          onPress={() => throttledAction('mic', onToggleMic, 400)}
+          activeOpacity={0.7}
           style={[
             styles.btn,
             isMicOn ? styles.btnSuccess : styles.btnDanger,
@@ -105,7 +118,8 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
         {/* Cam Button */}
         <TouchableOpacity
-          onPress={onToggleCam}
+          onPress={() => throttledAction('cam', onToggleCam, 400)}
+          activeOpacity={0.7}
           style={[
             styles.btn,
             isCamOn ? styles.btnSuccess : styles.btnDanger,
@@ -131,7 +145,8 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         {/* Screen Share (Only if supported and Desktop) */}
         {isTeacher && canScreenShare && (
           <TouchableOpacity
-            onPress={onToggleScreenShare}
+            onPress={() => throttledAction('screen', onToggleScreenShare, 600)}
+            activeOpacity={0.7}
             style={[
               styles.btn,
               isScreenSharing ? styles.btnWarning : styles.btnPrimary,
@@ -158,7 +173,8 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         {/* Grant Drawing Permission (Teacher only) */}
         {isTeacher && (
           <TouchableOpacity
-            onPress={onToggleGlobalDraw}
+            onPress={() => throttledAction('globalDraw', onToggleGlobalDraw, 300)}
+            activeOpacity={0.7}
             style={[
               styles.btn,
               globalCanDraw ? styles.btnPurple : styles.btnOutline,
@@ -185,7 +201,8 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         {/* Copy Instant Room Link (Teacher only) */}
         {isTeacher && (
           <TouchableOpacity
-            onPress={onCopyRoomLink}
+            onPress={() => throttledAction('copyLink', onCopyRoomLink, 500)}
+            activeOpacity={0.7}
             style={[
               styles.btn,
               styles.btnOutlinePrimary,
@@ -216,7 +233,8 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         {/* Teacher-only: End Classroom Button */}
         {isTeacher && onEndClassroom ? (
           <TouchableOpacity
-            onPress={onEndClassroom}
+            onPress={() => throttledAction('endClass', onEndClassroom, 600)}
+            activeOpacity={0.7}
             style={[
               styles.btn,
               styles.btnEndClass,
@@ -237,7 +255,8 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         ) : (
           /* Student: Leave Class Button */
           <TouchableOpacity
-            onPress={onLeaveClass}
+            onPress={() => throttledAction('leaveClass', onLeaveClass, 500)}
+            activeOpacity={0.7}
             style={[
               styles.btn,
               styles.btnExit,

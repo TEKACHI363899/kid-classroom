@@ -195,7 +195,7 @@ export class PeerService {
         this.localStream.getTracks().forEach((track) => {
           try {
             track.stop();
-          } catch (e) {}
+          } catch {}
         });
         this.localStream = null;
       }
@@ -230,7 +230,7 @@ export class PeerService {
         if (requiresReconnect) {
           try {
             call.close();
-          } catch (e) {}
+          } catch {}
         }
       });
 
@@ -321,14 +321,14 @@ export class PeerService {
     this.screenCalls.forEach((call) => {
       try {
         call.close();
-      } catch (_) {}
+      } catch {}
     });
     this.screenCalls.clear();
 
     if (this.screenPeer) {
       try {
         this.screenPeer.destroy();
-      } catch (_) {}
+      } catch {}
       this.screenPeer = null;
     }
 
@@ -418,14 +418,14 @@ export class PeerService {
     this.calls.forEach((call) => {
       try {
         call.close();
-      } catch (_) {}
+      } catch {}
     });
     this.calls.clear();
 
     this.screenCalls.forEach((call) => {
       try {
         call.close();
-      } catch (_) {}
+      } catch {}
     });
     this.screenCalls.clear();
 
@@ -433,7 +433,7 @@ export class PeerService {
     this.dataConnections.forEach((conn) => {
       try {
         conn.close();
-      } catch (_) {}
+      } catch {}
     });
     this.dataConnections.clear();
 

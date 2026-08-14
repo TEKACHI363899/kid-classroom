@@ -70,6 +70,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   }, [activeTeacherId]);
 
   const handleAddStudentSubmit = async () => {
+    if (loading) return;
     setAddStudentError(null);
     if (!newStudentFullName.trim() || !newStudentUsername.trim() || !newStudentPassword.trim()) {
       setAddStudentError('Vui lòng nhập đủ Họ Tên, Tên Đăng Nhập và Mật Khẩu.');
@@ -94,7 +95,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
       } else {
         setAddStudentError(res.message);
       }
-    } catch (err) {
+    } catch {
       setAddStudentError('Tạo tài khoản thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);

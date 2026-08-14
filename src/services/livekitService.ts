@@ -81,7 +81,7 @@ export class LivekitService {
       if (this.localVideoTrack && this.localVideoTrack.mediaStreamTrack && this.localVideoTrack.mediaStreamTrack.readyState === 'ended') {
         try {
           this.localVideoTrack.stop();
-        } catch (e) {}
+        } catch {}
         this.localVideoTrack = null;
       }
 
@@ -127,7 +127,7 @@ export class LivekitService {
       if (this.localAudioTrack && this.localAudioTrack.mediaStreamTrack && this.localAudioTrack.mediaStreamTrack.readyState === 'ended') {
         try {
           this.localAudioTrack.stop();
-        } catch (e) {}
+        } catch {}
         this.localAudioTrack = null;
       }
 

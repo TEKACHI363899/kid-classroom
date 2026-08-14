@@ -108,6 +108,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const isDrawingRef = useRef<boolean>(false);
   const pointsRef = useRef<StrokePoint[]>([]);
   const activePathRef = useRef<SVGPathElement | null>(null);
+  const recentlyErasedIdsRef = useRef<Set<string>>(new Set());
 
   // Bug 6: Floating Inline Text Input Card State
   const [floatingText, setFloatingText] = useState<FloatingTextInputState>({
@@ -120,12 +121,14 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     color: '#F43F5E',
   });
 
-  // Bug 5: Eraser Hit-Testing (<15px distance to stroke points)
+  // Bug 5: Eraser Hit-Testing (<15px distance to stroke points) with Deduplication
   const activeStrokes = strokes.filter(s => (s.pageId || 'page-1') === activePageId);
 
   const eraseStrokesNearPoint = (absoluteX: number, absoluteY: number) => {
     const hitRadius = 15;
     activeStrokes.forEach((stroke) => {
+      if (recentlyErasedIdsRef.current.has(stroke.id)) return;
+
       let isHit = false;
       stroke.points.forEach((pt) => {
         const absPt = denormalizeCoordinate(pt.x, pt.y, containerWidth, containerHeight);
@@ -135,6 +138,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         }
       });
       if (isHit) {
+        recentlyErasedIdsRef.current.add(stroke.id);
         onRemoveStroke(stroke.id);
       }
     });
@@ -294,6 +298,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     } else {
       isDrawingRef.current = false;
     }
+    recentlyErasedIdsRef.current.clear();
   };
 
   const handleConfirmText = () => {

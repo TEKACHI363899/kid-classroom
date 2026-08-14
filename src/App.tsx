@@ -8,6 +8,7 @@ import { StudentDashboard } from './screens/StudentDashboard';
 import { MeetingRoom } from './screens/MeetingRoom';
 import { Header } from './components/common/Header';
 import { Modal } from './components/common/Modal';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import {
   getStoredAuthSession,
   clearAuthSession,
@@ -119,7 +120,7 @@ export const App: React.FC = () => {
       const roomUrl = `/room/${roomCode}`;
       const newWin = window.open(roomUrl, '_blank');
       if (!newWin) {
-        alert('Trinh duyet da chan cua so bat len (pop-up). Vui long cho phep bat len de vao lop hoc!');
+        alert('Trình duyệt đã chặn cửa sổ bật lên (pop-up). Vui lòng cho phép bật lên để vào lớp học!');
       }
     }
   };
@@ -153,7 +154,7 @@ export const App: React.FC = () => {
       <View style={styles.offlineBanner}>
         <AlertCircle size={18} color="#92400E" />
         <Text style={styles.offlineText}>
-          Mat ket noi Internet. Vui long kiem tra lai duong truyen thiet bi!
+          Mất kết nối Internet. Vui lòng kiểm tra lại đường truyền thiết bị!
         </Text>
       </View>
     );
@@ -162,7 +163,7 @@ export const App: React.FC = () => {
   // Render 1: Inside Active Meeting Room
   if (activeRoomCode) {
     return (
-      <>
+      <ErrorBoundary>
         {renderOfflineBanner()}
         <MeetingRoom
           user={currentUser}
@@ -170,45 +171,49 @@ export const App: React.FC = () => {
           roomTitle={activeRoomTitle}
           onLeaveRoom={handleLeaveRoom}
         />
-      </>
+      </ErrorBoundary>
     );
   }
 
   // Render 2: Teacher Dashboard (Post-Login)
   if (currentUser && currentUser.role === 'teacher') {
     return (
-      <View style={styles.appWrapper}>
-        {renderOfflineBanner()}
-        <Header userName={currentUser.fullName} role={currentUser.role} onLogout={handleLogout} />
-        <TeacherDashboard user={currentUser} onStartRoom={handleStartRoom} />
-      </View>
+      <ErrorBoundary>
+        <View style={styles.appWrapper}>
+          {renderOfflineBanner()}
+          <Header userName={currentUser.fullName} role={currentUser.role} onLogout={handleLogout} />
+          <TeacherDashboard user={currentUser} onStartRoom={handleStartRoom} />
+        </View>
+      </ErrorBoundary>
     );
   }
 
   // Render 3: Student Dashboard (Post-Login / Auto-Logged-In)
   if (currentUser && currentUser.role === 'student') {
     return (
-      <View style={styles.appWrapper}>
-        {renderOfflineBanner()}
-        <Header userName={currentUser.fullName} role={currentUser.role} onLogout={handleLogout} />
-        <StudentDashboard user={currentUser} onJoinRoom={handleStartRoom} />
-        <Modal
-          visible={endedRoomNoticeVisible}
-          onClose={() => setEndedRoomNoticeVisible(false)}
-          title="Buổi Học Đã Kết Thúc"
-          icon={Lock}
-          description="Buổi học này đã được Giáo viên kết thúc. Bạn vui lòng xem các buổi học khác trên lịch dạy."
-          confirmLabel="Đã Hiểu"
-          confirmVariant="primary"
-          onConfirm={() => setEndedRoomNoticeVisible(false)}
-        />
-      </View>
+      <ErrorBoundary>
+        <View style={styles.appWrapper}>
+          {renderOfflineBanner()}
+          <Header userName={currentUser.fullName} role={currentUser.role} onLogout={handleLogout} />
+          <StudentDashboard user={currentUser} onJoinRoom={handleStartRoom} />
+          <Modal
+            visible={endedRoomNoticeVisible}
+            onClose={() => setEndedRoomNoticeVisible(false)}
+            title="Buổi Học Đã Kết Thúc"
+            icon={Lock}
+            description="Buổi học này đã được Giáo viên kết thúc. Bạn vui lòng xem các buổi học khác trên lịch dạy."
+            confirmLabel="Đã Hiểu"
+            confirmVariant="primary"
+            onConfirm={() => setEndedRoomNoticeVisible(false)}
+          />
+        </View>
+      </ErrorBoundary>
     );
   }
 
   // Render 4: Login Screen
   return (
-    <>
+    <ErrorBoundary>
       {renderOfflineBanner()}
       <HomeScreen onLogin={handleLogin} />
       <Modal
@@ -221,7 +226,7 @@ export const App: React.FC = () => {
         confirmVariant="primary"
         onConfirm={() => setEndedRoomNoticeVisible(false)}
       />
-    </>
+    </ErrorBoundary>
   );
 };
 
@@ -250,4 +255,3 @@ const styles = StyleSheet.create({
 });
 
 export default App;
-

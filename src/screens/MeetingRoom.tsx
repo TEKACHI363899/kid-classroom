@@ -14,6 +14,7 @@ import { Header } from '../components/common/Header';
 import { VideoGrid } from '../components/classroom/VideoGrid';
 import { ControlsBar } from '../components/classroom/ControlsBar';
 import { Modal } from '../components/common/Modal';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
 export interface MeetingRoomProps {
   user: UserProfile | null;
@@ -61,6 +62,12 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const isTeacherRef = useRef<boolean>(isTeacher);
   isTeacherRef.current = isTeacher;
   const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Async Lock Refs to completely prevent race conditions and button spam
+  const isTogglingMicRef = useRef<boolean>(false);
+  const isTogglingCamRef = useRef<boolean>(false);
+  const isTogglingScreenRef = useRef<boolean>(false);
+  const isEndingClassRef = useRef<boolean>(false);
 
   // Connection & Modals State
   const [connectionStatus, setConnectionStatus] = useState<string>('connected');
@@ -779,207 +786,239 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   }, [useLivekit]);
 
   const handleToggleMic = useCallback(async () => {
-    const nextState = !isMicOn;
+    if (isTogglingMicRef.current) return;
+    isTogglingMicRef.current = true;
 
-    if (nextState) {
-      const hasPermission = await checkAndRequestPermission('microphone');
-      if (!hasPermission) {
-        return;
+    try {
+      const nextState = !isMicOn;
+
+      if (nextState) {
+        const hasPermission = await checkAndRequestPermission('microphone');
+        if (!hasPermission) {
+          return;
+        }
+
+        if (useLivekit) {
+          const hasAudio = livekitService.localAudioTrack && 
+                           livekitService.localAudioTrack.mediaStreamTrack && 
+                           livekitService.localAudioTrack.mediaStreamTrack.readyState !== 'ended';
+          if (!hasAudio) {
+            const stream = await livekitService.startLocalMedia(true, isCamOn);
+            if (!stream) {
+              return;
+            }
+          }
+          // Verify we actually have a valid track now
+          const hasAudioUpdated = livekitService.localAudioTrack && 
+                                  livekitService.localAudioTrack.mediaStreamTrack && 
+                                  livekitService.localAudioTrack.mediaStreamTrack.readyState !== 'ended';
+          if (!hasAudioUpdated) {
+            return;
+          }
+        } else {
+          const localStream = peerService.localStream;
+          const hasAudio = localStream && 
+                           localStream.getAudioTracks().length > 0 && 
+                           localStream.getAudioTracks().some(t => t.readyState !== 'ended');
+          if (!hasAudio) {
+            const stream = await peerService.startLocalMedia(true, isCamOn);
+            if (!stream) {
+              return;
+            }
+          }
+          // Verify we actually have a valid track now
+          const updatedStream = peerService.localStream;
+          const hasAudioUpdated = updatedStream && 
+                                  updatedStream.getAudioTracks().length > 0 && 
+                                  updatedStream.getAudioTracks().some(t => t.readyState !== 'ended');
+          if (!hasAudioUpdated) {
+            return;
+          }
+        }
       }
 
+      setIsMicOn(nextState);
       if (useLivekit) {
-        const hasAudio = livekitService.localAudioTrack && 
-                         livekitService.localAudioTrack.mediaStreamTrack && 
-                         livekitService.localAudioTrack.mediaStreamTrack.readyState !== 'ended';
-        if (!hasAudio) {
-          const stream = await livekitService.startLocalMedia(true, isCamOn);
-          if (!stream) {
-            return;
-          }
-        }
-        // Verify we actually have a valid track now
-        const hasAudioUpdated = livekitService.localAudioTrack && 
-                                livekitService.localAudioTrack.mediaStreamTrack && 
-                                livekitService.localAudioTrack.mediaStreamTrack.readyState !== 'ended';
-        if (!hasAudioUpdated) {
-          return;
-        }
+        livekitService.toggleAudio(nextState);
       } else {
-        const localStream = peerService.localStream;
-        const hasAudio = localStream && 
-                         localStream.getAudioTracks().length > 0 && 
-                         localStream.getAudioTracks().some(t => t.readyState !== 'ended');
-        if (!hasAudio) {
-          const stream = await peerService.startLocalMedia(true, isCamOn);
-          if (!stream) {
-            return;
-          }
-        }
-        // Verify we actually have a valid track now
-        const updatedStream = peerService.localStream;
-        const hasAudioUpdated = updatedStream && 
-                                updatedStream.getAudioTracks().length > 0 && 
-                                updatedStream.getAudioTracks().some(t => t.readyState !== 'ended');
-        if (!hasAudioUpdated) {
-          return;
-        }
+        peerService.toggleAudio(nextState);
       }
-    }
 
-    setIsMicOn(nextState);
-    if (useLivekit) {
-      livekitService.toggleAudio(nextState);
-    } else {
-      peerService.toggleAudio(nextState);
-    }
-
-    if (roomChannelRef.current?.state === 'joined') {
-      roomChannelRef.current.send({
-        type: 'broadcast',
-        event: 'PEER_UPDATE',
-        payload: {
-          userId: currentUser.id,
-          connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
-          isMicOn: nextState,
-          isCamOn,
-        },
-      }).catch((e) => console.warn('Send peer update error:', e));
+      if (roomChannelRef.current?.state === 'joined') {
+        roomChannelRef.current.send({
+          type: 'broadcast',
+          event: 'PEER_UPDATE',
+          payload: {
+            userId: currentUser.id,
+            connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
+            isMicOn: nextState,
+            isCamOn,
+          },
+        }).catch((e) => console.warn('Send peer update error:', e));
+      }
+    } catch (e) {
+      console.warn('Error toggling mic:', e);
+    } finally {
+      setTimeout(() => {
+        isTogglingMicRef.current = false;
+      }, 300);
     }
   }, [isMicOn, isCamOn, useLivekit, currentUser, checkAndRequestPermission]);
 
   const handleToggleCam = useCallback(async () => {
-    const nextState = !isCamOn;
+    if (isTogglingCamRef.current) return;
+    isTogglingCamRef.current = true;
 
-    if (nextState) {
-      const hasPermission = await checkAndRequestPermission('camera');
-      if (!hasPermission) {
-        return;
+    try {
+      const nextState = !isCamOn;
+
+      if (nextState) {
+        const hasPermission = await checkAndRequestPermission('camera');
+        if (!hasPermission) {
+          return;
+        }
+
+        if (useLivekit) {
+          const hasVideo = livekitService.localVideoTrack && 
+                           livekitService.localVideoTrack.mediaStreamTrack && 
+                           livekitService.localVideoTrack.mediaStreamTrack.readyState !== 'ended';
+          if (!hasVideo) {
+            const stream = await livekitService.startLocalMedia(isMicOn, true);
+            if (!stream) {
+              return;
+            }
+          }
+          // Verify we actually have a valid track now
+          const hasVideoUpdated = livekitService.localVideoTrack && 
+                                  livekitService.localVideoTrack.mediaStreamTrack && 
+                                  livekitService.localVideoTrack.mediaStreamTrack.readyState !== 'ended';
+          if (!hasVideoUpdated) {
+            return;
+          }
+        } else {
+          const localStream = peerService.localStream;
+          const hasVideo = localStream && 
+                           localStream.getVideoTracks().length > 0 && 
+                           localStream.getVideoTracks().some(t => t.readyState !== 'ended');
+          if (!hasVideo) {
+            const stream = await peerService.startLocalMedia(isMicOn, true);
+            if (!stream) {
+              return;
+            }
+          }
+          // Verify we actually have a valid track now
+          const updatedStream = peerService.localStream;
+          const hasVideoUpdated = updatedStream && 
+                                  updatedStream.getVideoTracks().length > 0 && 
+                                  updatedStream.getVideoTracks().some(t => t.readyState !== 'ended');
+          if (!hasVideoUpdated) {
+            return;
+          }
+        }
       }
 
+      setIsCamOn(nextState);
       if (useLivekit) {
-        const hasVideo = livekitService.localVideoTrack && 
-                         livekitService.localVideoTrack.mediaStreamTrack && 
-                         livekitService.localVideoTrack.mediaStreamTrack.readyState !== 'ended';
-        if (!hasVideo) {
-          const stream = await livekitService.startLocalMedia(isMicOn, true);
-          if (!stream) {
-            return;
-          }
-        }
-        // Verify we actually have a valid track now
-        const hasVideoUpdated = livekitService.localVideoTrack && 
-                                livekitService.localVideoTrack.mediaStreamTrack && 
-                                livekitService.localVideoTrack.mediaStreamTrack.readyState !== 'ended';
-        if (!hasVideoUpdated) {
-          return;
-        }
+        livekitService.toggleVideo(nextState);
       } else {
-        const localStream = peerService.localStream;
-        const hasVideo = localStream && 
-                         localStream.getVideoTracks().length > 0 && 
-                         localStream.getVideoTracks().some(t => t.readyState !== 'ended');
-        if (!hasVideo) {
-          const stream = await peerService.startLocalMedia(isMicOn, true);
-          if (!stream) {
-            return;
-          }
-        }
-        // Verify we actually have a valid track now
-        const updatedStream = peerService.localStream;
-        const hasVideoUpdated = updatedStream && 
-                                updatedStream.getVideoTracks().length > 0 && 
-                                updatedStream.getVideoTracks().some(t => t.readyState !== 'ended');
-        if (!hasVideoUpdated) {
-          return;
-        }
+        peerService.toggleVideo(nextState);
       }
-    }
 
-    setIsCamOn(nextState);
-    if (useLivekit) {
-      livekitService.toggleVideo(nextState);
-    } else {
-      peerService.toggleVideo(nextState);
-    }
-
-    if (roomChannelRef.current?.state === 'joined') {
-      roomChannelRef.current.send({
-        type: 'broadcast',
-        event: 'PEER_UPDATE',
-        payload: {
-          userId: currentUser.id,
-          connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
-          isMicOn,
-          isCamOn: nextState,
-        },
-      }).catch((e) => console.warn('Send peer update error:', e));
+      if (roomChannelRef.current?.state === 'joined') {
+        roomChannelRef.current.send({
+          type: 'broadcast',
+          event: 'PEER_UPDATE',
+          payload: {
+            userId: currentUser.id,
+            connectionId: useLivekit ? currentUser.id : peerService.getConnectionId,
+            isMicOn,
+            isCamOn: nextState,
+          },
+        }).catch((e) => console.warn('Send peer update error:', e));
+      }
+    } catch (e) {
+      console.warn('Error toggling camera:', e);
+    } finally {
+      setTimeout(() => {
+        isTogglingCamRef.current = false;
+      }, 300);
     }
   }, [isMicOn, isCamOn, useLivekit, currentUser, checkAndRequestPermission]);
 
   const handleToggleScreenShare = useCallback(async () => {
     if (!isTeacher) return;
+    if (isTogglingScreenRef.current) return;
+    isTogglingScreenRef.current = true;
 
-    if (activePageId !== 'page-1') {
-      if (typeof window !== 'undefined') {
-        alert('Vui lòng quay lại Trang 1 để quản lý chia sẻ màn hình.');
-      }
-      return;
-    }
-
-    if (!isScreenSharing) {
-      let stream: MediaStream | null = null;
-      if (useLivekit) {
-        stream = await livekitService.startScreenShare();
-      } else {
-        const studentConnectionIds = participants
-          .filter((p) => p.role === 'student')
-          .map((p) => p.id);
-        stream = await peerService.startScreenShare(studentConnectionIds);
-      }
-
-      if (stream) {
-        setScreenStream(stream);
-        setIsScreenSharing(true);
-
-        // Set screen sharing status locally
-        setParticipants((prev) =>
-          prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: true } : p))
-        );
-
-        // Broadcast to other peers
-        if (roomChannelRef.current?.state === 'joined') {
-          roomChannelRef.current.send({
-            type: 'broadcast',
-            event: 'SCREEN_SHARE_STATE',
-            payload: {
-              userId: currentUser.id,
-              isSharing: true,
-            },
-          }).catch((e) => console.warn('Send screen share start error:', e));
+    try {
+      if (activePageId !== 'page-1') {
+        if (typeof window !== 'undefined') {
+          alert('Vui lòng quay lại Trang 1 để quản lý chia sẻ màn hình.');
         }
+        return;
       }
-    } else {
-      if (useLivekit) {
-        await livekitService.stopScreenShare();
-        setScreenStream(null);
-        setIsScreenSharing(false);
-        setParticipants((prev) =>
-          prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: false } : p))
-        );
 
-        if (roomChannelRef.current?.state === 'joined') {
-          roomChannelRef.current.send({
-            type: 'broadcast',
-            event: 'SCREEN_SHARE_STATE',
-            payload: {
-              userId: currentUser.id,
-              isSharing: false,
-            },
-          }).catch((e) => console.warn('Send screen share stop error:', e));
+      if (!isScreenSharing) {
+        let stream: MediaStream | null = null;
+        if (useLivekit) {
+          stream = await livekitService.startScreenShare();
+        } else {
+          const studentConnectionIds = participants
+            .filter((p) => p.role === 'student')
+            .map((p) => p.id);
+          stream = await peerService.startScreenShare(studentConnectionIds);
+        }
+
+        if (stream) {
+          setScreenStream(stream);
+          setIsScreenSharing(true);
+
+          // Set screen sharing status locally
+          setParticipants((prev) =>
+            prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: true } : p))
+          );
+
+          // Broadcast to other peers
+          if (roomChannelRef.current?.state === 'joined') {
+            roomChannelRef.current.send({
+              type: 'broadcast',
+              event: 'SCREEN_SHARE_STATE',
+              payload: {
+                userId: currentUser.id,
+                isSharing: true,
+              },
+            }).catch((e) => console.warn('Send screen share start error:', e));
+          }
         }
       } else {
-        peerService.stopScreenShare();
+        if (useLivekit) {
+          await livekitService.stopScreenShare();
+          setScreenStream(null);
+          setIsScreenSharing(false);
+          setParticipants((prev) =>
+            prev.map((p) => (p.id === currentUser.id ? { ...p, isScreenSharing: false } : p))
+          );
+
+          if (roomChannelRef.current?.state === 'joined') {
+            roomChannelRef.current.send({
+              type: 'broadcast',
+              event: 'SCREEN_SHARE_STATE',
+              payload: {
+                userId: currentUser.id,
+                isSharing: false,
+              },
+            }).catch((e) => console.warn('Send screen share stop error:', e));
+          }
+        } else {
+          peerService.stopScreenShare();
+        }
       }
+    } catch (e) {
+      console.warn('Error toggling screen share:', e);
+    } finally {
+      setTimeout(() => {
+        isTogglingScreenRef.current = false;
+      }, 500);
     }
   }, [isTeacher, isScreenSharing, useLivekit, participants, currentUser, activePageId]);
 
@@ -1000,33 +1039,41 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   }, [roomCode, onLeaveRoom]);
 
   const handleConfirmEndClassroom = async () => {
-    await endClassroomByCode(roomCode);
+    if (isEndingClassRef.current) return;
+    isEndingClassRef.current = true;
 
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(`approved_room_${roomCode}`);
-    }
+    try {
+      await endClassroomByCode(roomCode);
 
-    if (roomChannelRef.current?.state === 'joined') {
-      try {
-        await roomChannelRef.current.send({
-          type: 'broadcast',
-          event: 'CLASSROOM_ENDED',
-          payload: {},
-        });
-      } catch (e) {
-        console.warn('Failed to send CLASSROOM_ENDED broadcast:', e);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(`approved_room_${roomCode}`);
       }
+
+      if (roomChannelRef.current?.state === 'joined') {
+        try {
+          await roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'CLASSROOM_ENDED',
+            payload: {},
+          });
+        } catch (e) {
+          console.warn('Failed to send CLASSROOM_ENDED broadcast:', e);
+        }
+      }
+
+      peerService.broadcastData({ type: 'CLASSROOM_ENDED' });
+
+      // Allow 600ms for WebSocket transmission before closing connections and unmounting
+      setTimeout(() => {
+        livekitService.disconnect();
+        peerService.disconnect();
+        setEndClassModalVisible(false);
+        onLeaveRoom();
+      }, 600);
+    } catch (e) {
+      console.warn('Error ending classroom:', e);
+      isEndingClassRef.current = false;
     }
-
-    peerService.broadcastData({ type: 'CLASSROOM_ENDED' });
-
-    // Allow 600ms for WebSocket transmission before closing connections and unmounting
-    setTimeout(() => {
-      livekitService.disconnect();
-      peerService.disconnect();
-      setEndClassModalVisible(false);
-      onLeaveRoom();
-    }, 600);
   };
 
   const handleApproveStudent = (student: { userId: string; userName: string; connectionId: string }) => {
@@ -1108,39 +1155,41 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         </View>
       )}
 
-      {/* Video & Canvas Viewport */}
+      {/* Video & Canvas Viewport wrapped with ErrorBoundary */}
       <View style={{ flex: 1, width: '100%', minHeight: 0, justifyContent: 'center', alignItems: 'center' }}>
-        <VideoGrid
-          containerWidth={container16x9.width}
-          containerHeight={container16x9.height}
-          participants={participants.map((p) => ({
-            ...p,
-            canDraw:
-              p.role === 'teacher'
-                ? true
-                : permissionState.globalCanDraw || permissionState.studentPermissions[p.id] === true,
-          }))}
-          screenStream={screenStream}
-          strokes={strokes}
-          onAddStroke={addStroke}
-          onRemoveStroke={removeStroke}
-          onClearAll={clearCanvas}
-          userId={currentUser.id}
-          userName={currentUser.fullName}
-          isTeacher={isTeacher}
-          canDraw={canCurrentUserDraw}
-          onToggleStudentDraw={(stdId, curr) => updateStudentPermission(stdId, !curr)}
-          isMicOn={isMicOn}
-          onToggleMic={handleToggleMic}
-          isCamOn={isCamOn}
-          onToggleCam={handleToggleCam}
-          elapsedSeconds={elapsedSeconds}
-          pages={pages}
-          activePageId={activePageId}
-          onChangePage={changePage}
-          onAddPage={addPage}
-          onRemovePage={removePage}
-        />
+        <ErrorBoundary>
+          <VideoGrid
+            containerWidth={container16x9.width}
+            containerHeight={container16x9.height}
+            participants={participants.map((p) => ({
+              ...p,
+              canDraw:
+                p.role === 'teacher'
+                  ? true
+                  : permissionState.globalCanDraw || permissionState.studentPermissions[p.id] === true,
+            }))}
+            screenStream={screenStream}
+            strokes={strokes}
+            onAddStroke={addStroke}
+            onRemoveStroke={removeStroke}
+            onClearAll={clearCanvas}
+            userId={currentUser.id}
+            userName={currentUser.fullName}
+            isTeacher={isTeacher}
+            canDraw={canCurrentUserDraw}
+            onToggleStudentDraw={(stdId, curr) => updateStudentPermission(stdId, !curr)}
+            isMicOn={isMicOn}
+            onToggleMic={handleToggleMic}
+            isCamOn={isCamOn}
+            onToggleCam={handleToggleCam}
+            elapsedSeconds={elapsedSeconds}
+            pages={pages}
+            activePageId={activePageId}
+            onChangePage={changePage}
+            onAddPage={addPage}
+            onRemovePage={removePage}
+          />
+        </ErrorBoundary>
       </View>
 
       {/* Bottom Meeting Controls */}

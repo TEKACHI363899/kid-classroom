@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { TouchableOpacity, Text, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
 import type { LucideIcon } from 'lucide-react';
 import { COLORS, BUTTON_MIN_HEIGHT_MOBILE, BUTTON_MIN_HEIGHT_DESKTOP, BUTTON_BORDER_RADIUS, ICON_SIZES } from '../../constants';
@@ -11,6 +11,7 @@ export interface ButtonProps {
   icon?: LucideIcon;
   iconPosition?: 'left' | 'right';
   disabled?: boolean;
+  throttleMs?: number;
   style?: ViewStyle;
   textStyle?: TextStyle;
   size?: 'sm' | 'md' | 'lg';
@@ -24,6 +25,7 @@ export const Button: React.FC<ButtonProps> = ({
   icon: Icon,
   iconPosition = 'left',
   disabled = false,
+  throttleMs = 350,
   style,
   textStyle,
   size = 'md',
@@ -31,6 +33,17 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const { isMobile } = useResponsiveLayout();
   const minHeight = isMobile ? BUTTON_MIN_HEIGHT_MOBILE : BUTTON_MIN_HEIGHT_DESKTOP;
+  const lastPressTimeRef = useRef<number>(0);
+
+  const handlePress = useCallback(() => {
+    if (disabled) return;
+    const now = Date.now();
+    if (throttleMs > 0 && now - lastPressTimeRef.current < throttleMs) {
+      return;
+    }
+    lastPressTimeRef.current = now;
+    onPress();
+  }, [disabled, throttleMs, onPress]);
 
   const getBackgroundColor = (): string => {
     if (disabled) return COLORS.gray200;
@@ -60,7 +73,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
       activeOpacity={activeOpacity}
       style={[
@@ -110,9 +123,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   text: {
-    fontWeight: '600', // Apple HIG prefers Semibold for button text
+    fontWeight: '600',
     textAlign: 'center',
-    letterSpacing: -0.4, // SF Pro style negative tracking
+    letterSpacing: -0.4,
   },
   iconLeft: {
     marginRight: 10,

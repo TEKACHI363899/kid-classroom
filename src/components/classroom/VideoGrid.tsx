@@ -31,6 +31,28 @@ export interface VideoGridProps {
   onRemovePage: (pageId: string) => void;
 }
 
+// Global AudioContext Singleton to avoid hitting the browser 6-context hardware limit
+let globalAudioContext: AudioContext | null = null;
+
+function getSharedAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return null;
+
+  try {
+    if (!globalAudioContext || globalAudioContext.state === 'closed') {
+      globalAudioContext = new AudioContextClass();
+    }
+    if (globalAudioContext.state === 'suspended') {
+      globalAudioContext.resume().catch(() => {});
+    }
+    return globalAudioContext;
+  } catch (e) {
+    console.warn('Cannot initialize shared AudioContext:', e);
+    return null;
+  }
+}
+
 const ScreenVideoView: React.FC<{ stream: MediaStream }> = ({ stream }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -513,30 +535,29 @@ const ParticipantCard: React.FC<{
       return;
     }
 
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContext) return;
-    const audioCtx = new AudioContext();
-    const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.5;
+    const audioCtx = getSharedAudioContext();
+    if (!audioCtx) return;
 
     let source: MediaStreamAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+
     try {
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
+
       source = audioCtx.createMediaStreamSource(p.stream);
       source.connect(analyser);
     } catch (err) {
-      console.warn('Cannot create media stream source', err);
+      console.warn('Cannot create media stream source with shared AudioContext', err);
       return;
-    }
-
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(() => {});
     }
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     let intervalId: any;
 
     const updateLevel = () => {
+      if (!analyser) return;
       analyser.getByteFrequencyData(dataArray);
       let sum = 0;
       for (let i = 0; i < dataArray.length; i++) {
@@ -555,9 +576,15 @@ const ParticipantCard: React.FC<{
 
     return () => {
       clearInterval(intervalId);
-      source?.disconnect();
-      if (audioCtx.state !== 'closed') {
-        audioCtx.close().catch(console.warn);
+      if (source) {
+        try {
+          source.disconnect();
+        } catch {}
+      }
+      if (analyser) {
+        try {
+          analyser.disconnect();
+        } catch {}
       }
       setAudioLevel(0);
     };
@@ -582,7 +609,7 @@ const ParticipantCard: React.FC<{
       {!isSelf && <audio ref={audioRef} autoPlay playsInline />}
       <View style={styles.participantCard}>
       <View style={styles.participantAvatarArea}>
-        {/* Version 4.0: Mobile-safe Video Feed with autoPlay playsInline muted */}
+        {/* Mobile-safe Video Feed with autoPlay playsInline muted */}
         {p.isCamOn && p.stream && !p.isScreenSharing ? (
           <div style={{ width: 117, height: 117, borderRadius: 26, overflow: 'hidden', backgroundColor: '#000', ...borderStyle, transition: 'all 0.1s ease-in-out', boxSizing: 'border-box' }}>
             <video
@@ -688,7 +715,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 24,
     elevation: 8,
-    borderWidth: 1, // Mỏng hơn, giống Apple
+    borderWidth: 1,
     borderColor: COLORS.gray200,
     overflow: 'visible',
   },

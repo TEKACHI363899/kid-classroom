@@ -49,6 +49,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   }, []);
 
   const handleStudentLoginSubmit = async () => {
+    if (loading) return;
     setAuthError(null);
     setAuthSuccess(null);
     setLoading(true);
@@ -61,7 +62,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
         return;
       }
       setAuthError(res.message);
-    } catch (err) {
+    } catch {
       setAuthError('Đăng nhập thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);
@@ -69,6 +70,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   };
 
   const handleTeacherLogin = async () => {
+    if (loading) return;
     setAuthError(null);
     setAuthSuccess(null);
     setLoading(true);
@@ -81,7 +83,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
         return;
       }
       setAuthError(res.message);
-    } catch (err) {
+    } catch {
       setAuthError('Đăng nhập thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);
@@ -89,6 +91,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   };
 
   const handleTeacherRegister = async () => {
+    if (loading) return;
     setAuthError(null);
     setAuthSuccess(null);
 
@@ -118,7 +121,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
       } else {
         setAuthError(res.message);
       }
-    } catch (err) {
+    } catch {
       setAuthError('Đăng ký thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);

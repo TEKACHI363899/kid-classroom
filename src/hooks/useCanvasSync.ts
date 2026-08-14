@@ -72,8 +72,12 @@ export function useCanvasSync({
   }, []);
 
   const receivePageState = useCallback((state: CanvasPageState) => {
-    setPages(state.pages);
-    setActivePageId(state.activePageId);
+    if (state && Array.isArray(state.pages) && state.pages.length > 0) {
+      setPages(state.pages);
+      const targetId = state.activePageId || state.pages[0].id;
+      const exists = state.pages.some((p) => p.id === targetId);
+      setActivePageId(exists ? targetId : state.pages[0].id);
+    }
   }, []);
 
   // Initialize Supabase Broadcast Channel
@@ -253,6 +257,9 @@ export function useCanvasSync({
 
   const changePage = useCallback((pageId: string) => {
     if (!isTeacher) return;
+    const targetPage = pages.find((p) => p.id === pageId);
+    if (!targetPage) return;
+
     setActivePageId(pageId);
     
     const nextState = { pages, activePageId: pageId };
@@ -272,6 +279,8 @@ export function useCanvasSync({
 
   const addPage = useCallback(() => {
     if (!isTeacher) return;
+    if (pages.length >= 15) return; // Limit to maximum 15 pages
+
     const newPageId = `page-${Date.now()}`;
     const newPage = { id: newPageId, title: `Trang ${pages.length + 1}` };
     const nextPages = [...pages, newPage];
@@ -298,10 +307,12 @@ export function useCanvasSync({
     if (!isTeacher) return;
     if (pageId === 'page-1') return; // Cannot delete default page
 
-    const nextPages = pages.filter(p => p.id !== pageId);
+    const nextPages = pages.filter((p) => p.id !== pageId);
+    if (nextPages.length === 0) return;
+
     let nextActiveId = activePageId;
     if (activePageId === pageId) {
-      nextActiveId = 'page-1'; // fallback to page 1
+      nextActiveId = nextPages[0].id;
     }
 
     setPages(nextPages);

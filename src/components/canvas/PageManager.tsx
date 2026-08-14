@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Plus, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { COLORS } from '../../constants';
 import type { CanvasPage } from '../../types';
+
+const MAX_PAGES = 15;
 
 export interface PageManagerProps {
   pages: CanvasPage[];
@@ -22,9 +24,19 @@ export const PageManager: React.FC<PageManagerProps> = ({
   isTeacher,
 }) => {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
+  const lastActionTimeRef = useRef<number>(0);
+
+  const throttledAction = useCallback((action: () => void, cooldownMs: number = 300) => {
+    const now = Date.now();
+    if (now - lastActionTimeRef.current < cooldownMs) {
+      return;
+    }
+    lastActionTimeRef.current = now;
+    action();
+  }, []);
 
   if (!isTeacher) {
-    const currentPageIndex = pages.findIndex(p => p.id === activePageId);
+    const currentPageIndex = Math.max(0, pages.findIndex(p => p.id === activePageId));
     return (
       <View style={styles.studentIndicator}>
         <Text style={styles.studentIndicatorText}>
@@ -33,6 +45,8 @@ export const PageManager: React.FC<PageManagerProps> = ({
       </View>
     );
   }
+
+  const isMaxPagesReached = pages.length >= MAX_PAGES;
 
   return (
     <View style={[styles.container, isCollapsed && styles.containerCollapsed]} {...({
@@ -57,7 +71,7 @@ export const PageManager: React.FC<PageManagerProps> = ({
                 <View key={page.id} style={styles.pageItemRow}>
                   <TouchableOpacity
                     style={[styles.pageItem, isActive && styles.pageItemActive]}
-                    onPress={() => onChangePage(page.id)}
+                    onPress={() => throttledAction(() => onChangePage(page.id), 200)}
                   >
                     <Text style={[styles.pageText, isActive && styles.pageTextActive]}>
                       {index + 1}
@@ -66,7 +80,7 @@ export const PageManager: React.FC<PageManagerProps> = ({
                   {canDelete && (
                     <TouchableOpacity
                       style={styles.deleteBtn}
-                      onPress={() => onRemovePage(page.id)}
+                      onPress={() => throttledAction(() => onRemovePage(page.id), 350)}
                     >
                       <X size={12} color={COLORS.danger} />
                     </TouchableOpacity>
@@ -76,8 +90,12 @@ export const PageManager: React.FC<PageManagerProps> = ({
             })}
           </ScrollView>
 
-          <TouchableOpacity style={styles.addBtn} onPress={onAddPage}>
-            <Plus size={16} color={COLORS.white} />
+          <TouchableOpacity
+            style={[styles.addBtn, isMaxPagesReached && styles.addBtnDisabled]}
+            disabled={isMaxPagesReached}
+            onPress={() => throttledAction(onAddPage, 350)}
+          >
+            <Plus size={16} color={isMaxPagesReached ? COLORS.gray400 : COLORS.white} />
           </TouchableOpacity>
         </>
       )}
@@ -207,5 +225,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  addBtnDisabled: {
+    backgroundColor: COLORS.gray200,
   },
 });

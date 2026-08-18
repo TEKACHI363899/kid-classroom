@@ -178,6 +178,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     permissionState,
     canCurrentUserDraw,
     receiveStroke,
+    receiveBulkStrokes,
     receiveRemoveStroke,
     receiveClear,
     receivePermission,
@@ -196,6 +197,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
   const receiveStrokeRef = useRef(receiveStroke);
   receiveStrokeRef.current = receiveStroke;
+  const receiveBulkStrokesRef = useRef(receiveBulkStrokes);
+  receiveBulkStrokesRef.current = receiveBulkStrokes;
   const receiveRemoveStrokeRef = useRef(receiveRemoveStroke);
   receiveRemoveStrokeRef.current = receiveRemoveStroke;
   const receiveClearRef = useRef(receiveClear);
@@ -204,6 +207,13 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   receivePermissionRef.current = receivePermission;
   const receivePageStateRef = useRef(receivePageState);
   receivePageStateRef.current = receivePageState;
+
+  const strokesRef = useRef(strokes);
+  strokesRef.current = strokes;
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const activePageIdRef = useRef(activePageId);
+  activePageIdRef.current = activePageId;
 
   // Ref for permission state to avoid stale closures in unified channel listeners
   const permissionStateRef = useRef<typeof permissionState>(permissionState);
@@ -244,21 +254,13 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     // 3. APPROVE (for students)
     channel.on('broadcast', { event: 'APPROVE' }, ({ payload }) => {
       if (!isTeacherRef.current && payload.targetUserId === currentUserRef.current.id) {
-        // Set local storage flag for secure device validation in the new tab
+        // Set local storage flag for secure device validation on reconnect
         if (typeof window !== 'undefined') {
           localStorage.setItem(`approved_room_${roomCode}`, 'true');
         }
 
-        // Automatically open the room in a new tab with approved=true
-        const roomUrl = `/room/${roomCode}?approved=true`;
-        const newWin = window.open(roomUrl, '_blank');
-        if (!newWin) {
-          // Fallback if popup is blocked by the browser
-          setWaitingStatus('approved');
-        } else {
-          // If the new tab opened successfully, redirect the current waiting room tab to the main screen
-          onLeaveRoom();
-        }
+        // Seamless in-place transition to approved state (no popup blockers)
+        setWaitingStatus('approved');
       }
     });
 
@@ -287,6 +289,24 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           if (!useLivekitRef.current && isTeacherRef.current && isScreenSharingRef.current) {
             peerService.callScreenToPeer(payload.connectionId);
           }
+
+          // Teacher automatically syncs full canvas state to newly present or reconnected student
+          if (isTeacherRef.current && roomChannelRef.current?.state === 'joined') {
+            roomChannelRef.current.send({
+              type: 'broadcast',
+              event: 'page_state',
+              payload: { pages: pagesRef.current, activePageId: activePageIdRef.current },
+            }).catch(() => {});
+
+            if (strokesRef.current.length > 0) {
+              roomChannelRef.current.send({
+                type: 'broadcast',
+                event: 'sync_strokes',
+                payload: strokesRef.current,
+              }).catch(() => {});
+            }
+          }
+
           return [
             ...prev,
             {
@@ -531,6 +551,8 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             setEndedByTeacherNoticeVisible(true);
           } else if (msg.type === 'stroke') {
             receiveStrokeRef.current(msg.payload);
+          } else if (msg.type === 'sync_strokes') {
+            receiveBulkStrokesRef.current(msg.payload);
           } else if (msg.type === 'remove_stroke') {
             receiveRemoveStrokeRef.current(msg.payload.strokeId);
           } else if (msg.type === 'clear') {
@@ -539,6 +561,26 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             receivePermissionRef.current(msg.payload);
           } else if (msg.type === 'page_state') {
             receivePageStateRef.current(msg.payload);
+          }
+        },
+        onTrackEnded: (kind) => {
+          console.warn(`Hardware track ended in PeerJS: ${kind}`);
+          if (kind === 'audio') {
+            setIsMicOn(false);
+          } else if (kind === 'video') {
+            setIsCamOn(false);
+          }
+          if (roomChannelRef.current?.state === 'joined') {
+            roomChannelRef.current.send({
+              type: 'broadcast',
+              event: 'PEER_UPDATE',
+              payload: {
+                userId: currentUser.id,
+                connectionId: peerService.getConnectionId,
+                isMicOn: kind === 'audio' ? false : isMicOnRef.current,
+                isCamOn: kind === 'video' ? false : isCamOnRef.current,
+              },
+            }).catch((e) => console.warn('Send peer update error:', e));
           }
         },
         onNetworkQualityChange: (peerId, status) => {
@@ -627,6 +669,26 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               setPermissionModalVisible(true);
             } else {
               setConnectionStatus(state === 'connected' ? 'connected' : 'connecting');
+            }
+          },
+          onTrackEnded: (kind) => {
+            console.warn(`Hardware track ended in LiveKit: ${kind}`);
+            if (kind === 'audio') {
+              setIsMicOn(false);
+            } else if (kind === 'video') {
+              setIsCamOn(false);
+            }
+            if (roomChannelRef.current?.state === 'joined') {
+              roomChannelRef.current.send({
+                type: 'broadcast',
+                event: 'PEER_UPDATE',
+                payload: {
+                  userId: currentUser.id,
+                  connectionId: currentUser.id,
+                  isMicOn: kind === 'audio' ? false : isMicOnRef.current,
+                  isCamOn: kind === 'video' ? false : isCamOnRef.current,
+                },
+              }).catch((e) => console.warn('Send peer update error:', e));
             }
           },
           onLocalStreamStarted: (stream) => {
@@ -1088,6 +1150,21 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           targetConnectionId: student.connectionId,
         },
       }).catch((e) => console.warn('Send approve error:', e));
+
+      // Broadcast current canvas pages and existing strokes to newly approved student
+      roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'page_state',
+        payload: { pages: pagesRef.current, activePageId: activePageIdRef.current },
+      }).catch(() => {});
+
+      if (strokesRef.current.length > 0) {
+        roomChannelRef.current.send({
+          type: 'broadcast',
+          event: 'sync_strokes',
+          payload: strokesRef.current,
+        }).catch(() => {});
+      }
     }
 
     peerService.callPeer(student.connectionId);

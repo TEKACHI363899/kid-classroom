@@ -64,10 +64,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   });
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
 
   useEffect(() => {
     setStudents(getTeacherStudents(activeTeacherId));
   }, [activeTeacherId]);
+
+  const copyClassroomLink = (cls: Classroom) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const linkToCopy = `${origin}/join/${cls.roomCode}`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(linkToCopy);
+      setCopiedRoomId(cls.id);
+      setTimeout(() => setCopiedRoomId(null), 2500);
+    }
+  };
 
   const handleAddStudentSubmit = async () => {
     if (loading) return;
@@ -317,6 +329,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
                 </View>
 
                 <View style={styles.clsActionsRow}>
+                  <TouchableOpacity
+                    onPress={() => copyClassroomLink(cls)}
+                    style={[styles.copyRoomBtn, copiedRoomId === cls.id && styles.copyRoomBtnSuccess]}
+                  >
+                    {copiedRoomId === cls.id ? (
+                      <CheckCircle size={16} color={COLORS.success} />
+                    ) : (
+                      <Copy size={16} color={COLORS.primary} />
+                    )}
+                    <Text style={[styles.copyRoomText, copiedRoomId === cls.id && { color: COLORS.success }]}>
+                      {copiedRoomId === cls.id ? 'Đã Chép Link' : 'Sao Chép Link'}
+                    </Text>
+                  </TouchableOpacity>
+
                   {cls.status !== 'ended' ? (
                     <Button
                       label={cls.status === 'live' ? 'Vào Lớp' : 'Mở Lớp (Live)'}
@@ -690,6 +716,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
+  },
+  copyRoomBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+  },
+  copyRoomBtnSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  copyRoomText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
   endBtnMini: {
     padding: 10,

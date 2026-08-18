@@ -506,7 +506,17 @@ const ParticipantCard: React.FC<{
       if (p.stream && !isSelf) {
         if (audio.srcObject !== p.stream) {
           audio.srcObject = p.stream;
-          audio.play().catch((e) => console.warn('Audio play warning', e));
+          audio.play().catch((e) => {
+            console.warn('Audio play autoplay blocked, queuing gesture unlock:', e);
+            const unlockAudio = () => {
+              audio.play().catch(() => {});
+              getSharedAudioContext()?.resume().catch(() => {});
+              window.removeEventListener('click', unlockAudio);
+              window.removeEventListener('touchstart', unlockAudio);
+            };
+            window.addEventListener('click', unlockAudio, { once: true });
+            window.addEventListener('touchstart', unlockAudio, { once: true });
+          });
         }
       } else {
         audio.srcObject = null;

@@ -12,6 +12,7 @@ export interface PeerServiceEvents {
   onConnectionStatusChange?: (status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'permission_denied') => void;
   onScreenShareStopped?: () => void;
   onNetworkQualityChange?: (peerId: string, status: 'good' | 'poor') => void;
+  onTrackEnded?: (kind: 'audio' | 'video') => void;
 }
 
 export class PeerService {
@@ -190,47 +191,105 @@ export class PeerService {
 
   public async startLocalMedia(audio: boolean = true, video: boolean = true): Promise<MediaStream | null> {
     try {
-      // Release existing local stream tracks before requesting a new one
-      if (this.localStream) {
-        this.localStream.getTracks().forEach((track) => {
-          try {
-            track.stop();
-          } catch {}
-        });
-        this.localStream = null;
+      // Check existing tracks in localStream
+      const existingAudio = this.localStream?.getAudioTracks().find((t) => t.readyState === 'live');
+      const existingVideo = this.localStream?.getVideoTracks().find((t) => t.readyState === 'live');
+
+      const needAudio = audio && !existingAudio;
+      const needVideo = video && !existingVideo;
+
+      // If we don't have localStream, or we need new tracks from getUserMedia
+      if (needAudio || needVideo || !this.localStream) {
+        const constraints: MediaStreamConstraints = {
+          audio: needAudio ? WEBRTC_AUDIO_CONSTRAINTS : false,
+          video: needVideo
+            ? {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 },
+                facingMode: 'user',
+              }
+            : false,
+        };
+
+        if (needAudio || needVideo) {
+          const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+          if (!this.localStream) {
+            this.localStream = new MediaStream();
+          }
+
+          newStream.getTracks().forEach((track) => {
+            track.onended = () => {
+              this.events.onTrackEnded?.(track.kind as 'audio' | 'video');
+            };
+            this.localStream?.addTrack(track);
+          });
+        }
       }
 
-      const constraints: MediaStreamConstraints = {
-        audio: audio ? WEBRTC_AUDIO_CONSTRAINTS : false,
-        video: video ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 },
-          facingMode: 'user'
-        } : false,
-      };
+      if (!this.localStream) {
+        this.localStream = new MediaStream();
+      }
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      this.localStream = stream;
+      const stream = this.localStream;
       this.events.onLocalStream?.(stream);
 
-      this.calls.forEach((call) => {
-        const sender = call.peerConnection.getSenders();
-        let requiresReconnect = false;
-        
+      // Attach track ended listeners to all existing tracks as well
+      stream.getTracks().forEach((track) => {
+        if (!track.onended) {
+          track.onended = () => {
+            this.events.onTrackEnded?.(track.kind as 'audio' | 'video');
+          };
+        }
+      });
+
+      // Synchronize senders across all active peer calls
+      const peersToRecall: string[] = [];
+
+      this.calls.forEach((call, peerId) => {
+        const pc = call.peerConnection;
+        if (!pc || pc.connectionState === 'closed') {
+          peersToRecall.push(peerId);
+          return;
+        }
+
+        const senders = pc.getSenders();
+        let needsRecall = false;
+
         stream.getTracks().forEach((track) => {
-          const existingSender = sender.find((s) => s.track?.kind === track.kind);
+          const existingSender = senders.find((s) => s.track?.kind === track.kind);
           if (existingSender) {
-            existingSender.replaceTrack(track);
+            existingSender.replaceTrack(track).catch((err) => {
+              console.warn(`replaceTrack failed for ${peerId}:`, err);
+              needsRecall = true;
+            });
           } else {
-            requiresReconnect = true;
+            // No existing sender for this kind of track -> Need renegotiation
+            try {
+              pc.addTrack(track, stream);
+            } catch {
+              needsRecall = true;
+            }
           }
         });
 
-        if (requiresReconnect) {
-          try {
-            call.close();
-          } catch {}
+        if (needsRecall) {
+          peersToRecall.push(peerId);
+        }
+      });
+
+      // Gracefully re-call peers that require renegotiation so connection is NEVER broken
+      peersToRecall.forEach((peerId) => {
+        try {
+          const oldCall = this.calls.get(peerId);
+          if (oldCall) {
+            oldCall.close();
+            this.calls.delete(peerId);
+          }
+          this.callPeer(peerId);
+        } catch (e) {
+          console.warn(`Error recalling peer ${peerId}:`, e);
         }
       });
 

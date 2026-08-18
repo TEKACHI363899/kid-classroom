@@ -25,6 +25,7 @@ export interface LivekitServiceEvents {
   onLocalStreamStarted?: (stream: MediaStream) => void;
   onConnectionStateChange?: (state: 'connected' | 'connecting' | 'disconnected' | 'reconnecting' | 'permission_denied') => void;
   onScreenShareStopped?: () => void;
+  onTrackEnded?: (kind: 'audio' | 'video') => void;
 }
 
 export class LivekitService {
@@ -74,7 +75,6 @@ export class LivekitService {
 
   public async startLocalMedia(audio: boolean = true, video: boolean = true): Promise<MediaStream | null> {
     if (!this.room) return null;
-    const mediaStream = new MediaStream();
 
     if (video) {
       // Release old video track if it's dead/ended
@@ -93,11 +93,8 @@ export class LivekitService {
           try {
             await this.room.localParticipant.publishTrack(this.localVideoTrack);
           } catch (pubErr) {
-            console.warn('Video track publish warning (might be already publishing/published):', pubErr);
+            console.warn('Video track publish warning:', pubErr);
           }
-        }
-        if (this.localVideoTrack.mediaStreamTrack) {
-          mediaStream.addTrack(this.localVideoTrack.mediaStreamTrack);
         }
       } else {
         try {
@@ -108,16 +105,18 @@ export class LivekitService {
           });
           this.localVideoTrack = videoTrack;
           await this.room.localParticipant.publishTrack(videoTrack);
-          
+
           if (videoTrack.mediaStreamTrack) {
-            mediaStream.addTrack(videoTrack.mediaStreamTrack);
+            videoTrack.mediaStreamTrack.onended = () => {
+              this.events.onTrackEnded?.('video');
+            };
           }
         } catch (error: unknown) {
           const err = error as { name?: string };
           if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
             this.events.onConnectionStateChange?.('permission_denied');
           }
-          console.warn('Could not initialize video track (e.g. no camera device):', error);
+          console.warn('Could not initialize video track:', error);
         }
       }
     }
@@ -139,11 +138,8 @@ export class LivekitService {
           try {
             await this.room.localParticipant.publishTrack(this.localAudioTrack);
           } catch (pubErr) {
-            console.warn('Audio track publish warning (might be already publishing/published):', pubErr);
+            console.warn('Audio track publish warning:', pubErr);
           }
-        }
-        if (this.localAudioTrack.mediaStreamTrack) {
-          mediaStream.addTrack(this.localAudioTrack.mediaStreamTrack);
         }
       } else {
         try {
@@ -153,16 +149,27 @@ export class LivekitService {
           await this.room.localParticipant.publishTrack(audioTrack);
 
           if (audioTrack.mediaStreamTrack) {
-            mediaStream.addTrack(audioTrack.mediaStreamTrack);
+            audioTrack.mediaStreamTrack.onended = () => {
+              this.events.onTrackEnded?.('audio');
+            };
           }
         } catch (error: unknown) {
           const err = error as { name?: string };
           if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
             this.events.onConnectionStateChange?.('permission_denied');
           }
-          console.warn('Could not initialize audio track (e.g. no microphone device):', error);
+          console.warn('Could not initialize audio track:', error);
         }
       }
+    }
+
+    // Always gather all currently active tracks (Audio + Video) into the returned MediaStream
+    const mediaStream = new MediaStream();
+    if (this.localVideoTrack?.mediaStreamTrack && this.localVideoTrack.mediaStreamTrack.readyState === 'live') {
+      mediaStream.addTrack(this.localVideoTrack.mediaStreamTrack);
+    }
+    if (this.localAudioTrack?.mediaStreamTrack && this.localAudioTrack.mediaStreamTrack.readyState === 'live') {
+      mediaStream.addTrack(this.localAudioTrack.mediaStreamTrack);
     }
 
     const localMediaStream = mediaStream;

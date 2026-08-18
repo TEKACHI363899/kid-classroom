@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { User, ShieldCheck, LogIn, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle, CheckSquare, Square } from 'lucide-react';
+import { User, ShieldCheck, LogIn, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle, CheckSquare, Square, Sparkles } from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserRole, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
@@ -12,7 +12,8 @@ export interface HomeScreenProps {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
-  const [roomCode, setRoomCode] = useState<string>('MATH101');
+  const [roomCode, setRoomCode] = useState<string>('');
+  const [roomTitle, setRoomTitle] = useState<string>('');
 
   // Student Credentials State
   const [studentUsername, setStudentUsername] = useState<string>('');
@@ -41,9 +42,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const urlRoom = params.get('room') || params.get('code');
+      const urlRoom = params.get('room') || params.get('code') || sessionStorage.getItem('redirect_room_code');
+      const urlTitle = sessionStorage.getItem('redirect_room_title');
       if (urlRoom) {
         setRoomCode(urlRoom);
+      }
+      if (urlTitle) {
+        setRoomTitle(urlTitle);
       }
     }
   }, []);
@@ -139,6 +144,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           <Text style={styles.mainTitle}>Lớp Học Trực Tuyến Tương Tác</Text>
           <Text style={styles.subTitle}>Dành cho Trẻ Em & Giáo Viên - Học vui, Vẽ thích!</Text>
         </View>
+
+        {/* Direct Link Destination Notice Banner */}
+        {roomCode ? (
+          <View style={styles.directLinkBanner}>
+            <Sparkles size={ICON_SIZES.sm} color={COLORS.primary} />
+            <Text style={styles.directLinkText}>
+              Đang chuẩn bị vào lớp: <Text style={styles.boldCred}>{roomTitle ? `${roomTitle} (${roomCode})` : roomCode}</Text>
+            </Text>
+          </View>
+        ) : null}
 
         {/* Role Toggle Selector */}
         <View style={styles.roleToggleRow}>
@@ -539,5 +554,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     flex: 1,
+  },
+  directLinkBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 20,
+  },
+  directLinkText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  boldCred: {
+    fontWeight: '900',
+    color: COLORS.primary,
   },
 });

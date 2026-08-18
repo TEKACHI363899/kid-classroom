@@ -49,36 +49,42 @@ export const App: React.FC = () => {
       const pathname = window.location.pathname;
       const storedSession = getStoredAuthSession();
 
-      // Check for Direct Link Join (/join/:roomCode or /room/:roomCode)
+      // Check for Direct Link Join (/join/:roomCode or /room/:roomCode or ?room= / ?code=)
+      let detectedCode = '';
+      const params = new URLSearchParams(window.location.search);
+      const queryCode = params.get('room') || params.get('code');
+
       if (pathname.includes('/room/') || pathname.includes('/join/')) {
-        const parts = pathname.split('/');
-        const code = parts[parts.length - 1];
+        const segments = pathname.split('/').filter(Boolean);
+        detectedCode = segments[segments.length - 1] || '';
+      } else if (queryCode) {
+        detectedCode = queryCode;
+      }
 
-        if (code) {
-          const checkAndJoin = async () => {
-            const roomObj = await getClassroomByCodeOnline(code);
-            if (roomObj && roomObj.status === 'ended') {
-              setEndedRoomNoticeVisible(true);
-              return;
+      if (detectedCode) {
+        const checkAndJoin = async () => {
+          const roomObj = await getClassroomByCodeOnline(detectedCode);
+          if (roomObj && roomObj.status === 'ended') {
+            setEndedRoomNoticeVisible(true);
+            return;
+          }
+
+          if (storedSession) {
+            // Case A: Already logged in -> Auto-enter Meeting Room immediately
+            setCurrentUser(storedSession.profile);
+            setActiveRoomCode(detectedCode);
+            if (roomObj?.title) setActiveRoomTitle(roomObj.title);
+          } else {
+            // Case B: Not logged in -> Save redirect_room_code and open Login Screen
+            sessionStorage.setItem('redirect_room_code', detectedCode);
+            if (roomObj?.title) {
+              sessionStorage.setItem('redirect_room_title', roomObj.title);
             }
+          }
+        };
 
-            if (storedSession) {
-              // Case A: Already logged in -> Auto-enter Meeting Room immediately
-              setCurrentUser(storedSession.profile);
-              setActiveRoomCode(code);
-              if (roomObj?.title) setActiveRoomTitle(roomObj.title);
-            } else {
-              // Case B: Not logged in -> Save redirect_room_code and open Login Screen
-              sessionStorage.setItem('redirect_room_code', code);
-              if (roomObj?.title) {
-                sessionStorage.setItem('redirect_room_title', roomObj.title);
-              }
-            }
-          };
-
-          checkAndJoin();
-          return;
-        }
+        checkAndJoin();
+        return;
       }
 
       // Default persistent auto-login check
@@ -91,7 +97,7 @@ export const App: React.FC = () => {
   const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
 
-    // Version 5.0: Post-Login Direct Link Redirect Check
+    // Post-Login Direct Link Redirect Check
     if (typeof window !== 'undefined') {
       const redirectCode = sessionStorage.getItem('redirect_room_code');
       const redirectTitle = sessionStorage.getItem('redirect_room_title');
@@ -108,20 +114,34 @@ export const App: React.FC = () => {
     setActiveRoomCode(null);
   };
 
-  const handleStartRoom = (roomCode: string, _title?: string) => {
+  const handleStartRoom = (roomCode: string, title?: string) => {
     const roomObj = getClassroomByCode(roomCode);
     if (roomObj && roomObj.status === 'ended') {
       setEndedRoomNoticeVisible(true);
       return;
     }
     
-    // Open room in a new browser tab/window
+    // Open room smoothly: if popup is blocked or on mobile device, fallback seamlessly to in-app view
     if (typeof window !== 'undefined') {
+      const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || 
+                            ('ontouchstart' in window && window.innerWidth < 1024);
+      
+      if (isMobileDevice) {
+        setActiveRoomCode(roomCode);
+        if (title || roomObj?.title) setActiveRoomTitle(title || roomObj?.title || '');
+        return;
+      }
+
       const roomUrl = `/room/${roomCode}`;
       const newWin = window.open(roomUrl, '_blank');
       if (!newWin) {
-        alert('Trình duyệt đã chặn cửa sổ bật lên (pop-up). Vui lòng cho phép bật lên để vào lớp học!');
+        // Fallback gracefully to active room state without alerting
+        setActiveRoomCode(roomCode);
+        if (title || roomObj?.title) setActiveRoomTitle(title || roomObj?.title || '');
       }
+    } else {
+      setActiveRoomCode(roomCode);
+      if (title || roomObj?.title) setActiveRoomTitle(title || roomObj?.title || '');
     }
   };
 

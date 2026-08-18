@@ -20,6 +20,7 @@ export interface UseCanvasSyncReturn {
   setGlobalCanDraw: (canDraw: boolean) => void;
   canCurrentUserDraw: boolean;
   receiveStroke: (stroke: CanvasStroke) => void;
+  receiveBulkStrokes: (strokes: CanvasStroke[]) => void;
   receiveRemoveStroke: (strokeId: string) => void;
   receiveClear: (pageId?: string) => void;
   receivePermission: (state: DrawingPermissionState) => void;
@@ -52,6 +53,16 @@ export function useCanvasSync({
     setStrokes((prev) => {
       if (prev.some((s) => s.id === incomingStroke.id)) return prev;
       return [...prev, incomingStroke];
+    });
+  }, []);
+
+  const receiveBulkStrokes = useCallback((incomingStrokes: CanvasStroke[]) => {
+    if (!Array.isArray(incomingStrokes) || incomingStrokes.length === 0) return;
+    setStrokes((prev) => {
+      const existingIdSet = new Set(prev.map((s) => s.id));
+      const newUnique = incomingStrokes.filter((s) => s && s.id && !existingIdSet.has(s.id));
+      if (newUnique.length === 0) return prev;
+      return [...prev, ...newUnique];
     });
   }, []);
 
@@ -97,6 +108,11 @@ export function useCanvasSync({
           receiveStroke(payload.payload as CanvasStroke);
         }
       })
+      .on('broadcast', { event: 'sync_strokes' }, (payload) => {
+        if (payload.payload) {
+          receiveBulkStrokes(payload.payload as CanvasStroke[]);
+        }
+      })
       .on('broadcast', { event: 'remove_stroke' }, (payload) => {
         if (payload.payload) {
           const strokeId = (payload.payload as { strokeId: string }).strokeId;
@@ -126,7 +142,7 @@ export function useCanvasSync({
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [roomId, receiveStroke, receiveRemoveStroke, receiveClear, receivePermission, receivePageState]);
+  }, [roomId, receiveStroke, receiveBulkStrokes, receiveRemoveStroke, receiveClear, receivePermission, receivePageState]);
 
   const addStroke = useCallback(
     (newStroke: CanvasStroke) => {
@@ -310,6 +326,9 @@ export function useCanvasSync({
     const nextPages = pages.filter((p) => p.id !== pageId);
     if (nextPages.length === 0) return;
 
+    // Purge strokes belonging to the removed page to prevent memory leak
+    setStrokes((prev) => prev.filter((s) => (s.pageId || 'page-1') !== pageId));
+
     let nextActiveId = activePageId;
     if (activePageId === pageId) {
       nextActiveId = nextPages[0].id;
@@ -347,6 +366,7 @@ export function useCanvasSync({
     setGlobalCanDraw,
     canCurrentUserDraw,
     receiveStroke,
+    receiveBulkStrokes,
     receiveRemoveStroke,
     receiveClear,
     receivePermission,

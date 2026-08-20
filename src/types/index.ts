@@ -33,9 +33,29 @@ export interface StudentAccount {
   id: string;
   teacherId: string;
   fullName: string;
-  username: string;
-  passwordText: string;
+  username?: string;
+  passwordText?: string;
   createdAt?: string;
+}
+
+export interface GuestStudentProfile {
+  id: string;
+  fullName: string;
+  role: 'student';
+  isGuest: true;
+  roomCode: string;
+}
+
+export interface InstantJoinSession {
+  roomCode: string;
+  studentName: string;
+  profile: UserProfile;
+}
+
+export interface ShareableRoomLink {
+  roomCode: string;
+  directJoinUrl: string;
+  qrPayload?: string;
 }
 
 export interface WebRTCConnection {

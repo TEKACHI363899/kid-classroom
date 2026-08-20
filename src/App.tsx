@@ -14,6 +14,7 @@ import {
   clearAuthSession,
   getClassroomByCode,
   getClassroomByCodeOnline,
+  saveAuthSession,
 } from './services/storageService';
 
 export const App: React.FC = () => {
@@ -69,13 +70,30 @@ export const App: React.FC = () => {
             return;
           }
 
+          const queryName = params.get('name') || params.get('student');
+          const effectiveName = (queryName ? queryName.trim() : '') || localStorage.getItem('last_student_nickname');
+
           if (storedSession) {
             // Case A: Already logged in -> Auto-enter Meeting Room immediately
             setCurrentUser(storedSession.profile);
             setActiveRoomCode(detectedCode);
             if (roomObj?.title) setActiveRoomTitle(roomObj.title);
+          } else if (effectiveName) {
+            // Case B: URL name or remembered student nickname -> 1-Click instant auto-enter
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('last_student_nickname', effectiveName);
+            }
+            const guestStudent: UserProfile = {
+              id: `std-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              fullName: effectiveName,
+              role: 'student',
+            };
+            saveAuthSession(guestStudent);
+            setCurrentUser(guestStudent);
+            setActiveRoomCode(detectedCode);
+            if (roomObj?.title) setActiveRoomTitle(roomObj.title);
           } else {
-            // Case B: Not logged in -> Save redirect_room_code and open Login Screen
+            // Case C: Pre-fill redirect room code for HomeScreen 1-Click form
             sessionStorage.setItem('redirect_room_code', detectedCode);
             if (roomObj?.title) {
               sessionStorage.setItem('redirect_room_title', roomObj.title);
@@ -94,8 +112,13 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const handleLogin = (user: UserProfile) => {
+  const handleLogin = (user: UserProfile, roomCode?: string) => {
     setCurrentUser(user);
+
+    if (roomCode) {
+      setActiveRoomCode(roomCode);
+      return;
+    }
 
     // Post-Login Direct Link Redirect Check
     if (typeof window !== 'undefined') {

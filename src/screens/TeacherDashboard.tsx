@@ -37,8 +37,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   const [addStudentError, setAddStudentError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Show/Hide Password State per student ID
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
 
   // Teacher Passwords Modal State
   const [showTeacherPasswordsModal, setShowTeacherPasswordsModal] = useState<boolean>(false);
@@ -65,6 +63,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
+  const [copyToastMessage, setCopyToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setStudents(getTeacherStudents(activeTeacherId));
@@ -77,25 +76,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
     if (navigator.clipboard) {
       navigator.clipboard.writeText(linkToCopy);
       setCopiedRoomId(cls.id);
-      setTimeout(() => setCopiedRoomId(null), 2500);
+      setCopyToastMessage(`Đã sao chép link phòng học (${cls.roomCode})! Học sinh chỉ cần bấm vào là vào lớp ngay.`);
+      setTimeout(() => {
+        setCopiedRoomId(null);
+        setCopyToastMessage(null);
+      }, 3000);
     }
   };
 
   const handleAddStudentSubmit = async () => {
     if (loading) return;
     setAddStudentError(null);
-    if (!newStudentFullName.trim() || !newStudentUsername.trim() || !newStudentPassword.trim()) {
-      setAddStudentError('Vui lòng nhập đủ Họ Tên, Tên Đăng Nhập và Mật Khẩu.');
+    if (!newStudentFullName.trim()) {
+      setAddStudentError('Vui lòng nhập Họ và Tên của Học Sinh.');
       return;
     }
+
+    const cleanFullName = newStudentFullName.trim();
+    const autoUsername = newStudentUsername.trim() || `hs_${cleanFullName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Math.floor(100 + Math.random() * 900)}`;
+    const autoPassword = newStudentPassword.trim() || '123456';
 
     setLoading(true);
     try {
       const res = await registerStudentAccount(
         activeTeacherId,
-        newStudentFullName,
-        newStudentUsername,
-        newStudentPassword
+        cleanFullName,
+        autoUsername,
+        autoPassword
       );
 
       if (res.success) {
@@ -108,7 +115,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
         setAddStudentError(res.message);
       }
     } catch {
-      setAddStudentError('Tạo tài khoản thất bại. Vui lòng thử lại.');
+      setAddStudentError('Thêm học sinh thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
@@ -119,18 +126,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
     setStudents(updated);
   };
 
-  const togglePasswordVisibility = (stdId: string) => {
-    setVisiblePasswords((prev) => ({ ...prev, [stdId]: !prev[stdId] }));
-  };
-
-  const copyStudentCredentialsText = (std: StudentAccount) => {
-    const origin = window.location.origin;
-    const textToCopy = `Thông tin tài khoản học sinh ${std.fullName}:\nTên đăng nhập: ${std.username}\nMật khẩu: ${std.passwordText}\nĐịa chỉ Web: ${origin}`;
+  const copyStudentPersonalLink = (std: StudentAccount) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const activeRoom = classrooms.find((c) => c.status === 'live') || classrooms[0];
+    const roomCode = activeRoom?.roomCode || 'MATH101';
+    const linkToCopy = `${origin}/join/${roomCode}?name=${encodeURIComponent(std.fullName)}`;
 
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(textToCopy);
+      navigator.clipboard.writeText(linkToCopy);
       setCopiedId(std.id);
-      setTimeout(() => setCopiedId(null), 2500);
+      setCopyToastMessage(`Đã sao chép link 1-Click cho ${std.fullName}!`);
+      setTimeout(() => {
+        setCopiedId(null);
+        setCopyToastMessage(null);
+      }, 3000);
     }
   };
 
@@ -179,6 +188,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.contentWrapper}>
+        {/* Floating Toast Notification Banner */}
+        {copyToastMessage && (
+          <View style={styles.toastBanner}>
+            <CheckCircle size={ICON_SIZES.sm} color={COLORS.success} />
+            <Text style={styles.toastText}>{copyToastMessage}</Text>
+          </View>
+        )}
+
         {/* Header Hero Section */}
         <View style={styles.heroBanner}>
           <View style={styles.heroTextGroup}>
@@ -223,12 +240,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
 
         {students.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>Chưa có học sinh trong danh sách. Bấm "Thêm Học Sinh Mới" để khởi tạo Tên Đăng Nhập & Mật Khẩu nhé!</Text>
+            <Text style={styles.emptyText}>Chưa có học sinh trong danh sách. Bấm "Thêm Học Sinh Mới" để lưu tên và sao chép link tham gia nhanh cho các em!</Text>
           </View>
         ) : (
           <View style={styles.studentCardsGrid}>
             {students.map((std) => {
-              const showPass = visiblePasswords[std.id] || false;
               return (
                 <View key={std.id} style={styles.studentCard}>
                   <View style={styles.studentCardHeader}>
@@ -237,19 +253,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
                     </View>
                     <View style={styles.studentDetails}>
                       <Text style={styles.studentName}>{std.fullName}</Text>
-                      <Text style={styles.credentialsText}>Username: <Text style={styles.boldCred}>{std.username}</Text></Text>
-                      <View style={styles.passRow}>
-                        <Text style={styles.credentialsText}>
-                          Mật khẩu: <Text style={styles.boldCred}>{showPass ? std.passwordText : '••••••••'}</Text>
-                        </Text>
-                        <TouchableOpacity onPress={() => togglePasswordVisibility(std.id)} style={styles.eyeBtn}>
-                          {showPass ? (
-                            <EyeOff size={16} color={COLORS.gray600} />
-                          ) : (
-                            <Eye size={16} color={COLORS.primary} />
-                          )}
-                        </TouchableOpacity>
-                      </View>
+                      <Text style={styles.credentialsText}>Tham gia nhanh: <Text style={styles.boldCred}>Chỉ cần nhấp Link</Text></Text>
                     </View>
                     <TouchableOpacity onPress={() => handleDeleteStudent(std.id)} style={styles.delStdBtn}>
                       <Trash2 size={16} color={COLORS.gray400} />
@@ -257,7 +261,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
                   </View>
 
                   <TouchableOpacity
-                    onPress={() => copyStudentCredentialsText(std)}
+                    onPress={() => copyStudentPersonalLink(std)}
                     style={[styles.copyLinkBtn, copiedId === std.id && styles.copyLinkBtnSuccess]}
                   >
                     {copiedId === std.id ? (
@@ -266,7 +270,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
                       <Copy size={ICON_SIZES.sm} color={COLORS.primary} />
                     )}
                     <Text style={[styles.copyLinkText, copiedId === std.id && { color: COLORS.success }]}>
-                      {copiedId === std.id ? 'Đã Sao Chép Khẩu!' : 'Sao Chép Thông Tin Tài Khoản'}
+                      {copiedId === std.id ? 'Đã Sao Chép Link Riêng!' : 'Sao Chép Link 1-Click Cho Em'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -339,7 +343,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
                       <Copy size={16} color={COLORS.primary} />
                     )}
                     <Text style={[styles.copyRoomText, copiedRoomId === cls.id && { color: COLORS.success }]}>
-                      {copiedRoomId === cls.id ? 'Đã Chép Link' : 'Sao Chép Link'}
+                      {copiedRoomId === cls.id ? 'Đã Sao Chép Link Học Sinh!' : 'Sao Chép Link Tham Gia Cho Học Sinh'}
                     </Text>
                   </TouchableOpacity>
 
@@ -379,9 +383,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
       <Modal
         visible={addStudentVisible}
         onClose={() => setAddStudentVisible(false)}
-        title="Thêm Học Sinh Mới"
-        description="Khởi tạo Tên Đăng Nhập và Mật Khẩu để gửi cho Học sinh / Phụ huynh."
-        confirmLabel={loading ? 'Đang Tạo...' : 'Tạo Tài Khoản'}
+        title="Thêm Học Sinh Vào Danh Sách"
+        description="Nhập tên học sinh để tạo link tham gia 1-Click cá nhân hóa gửi cho Phụ huynh / Học sinh."
+        confirmLabel={loading ? 'Đang Lưu...' : 'Thêm Vào Danh Sách'}
         confirmVariant="primary"
         onConfirm={handleAddStudentSubmit}
         cancelLabel="Hủy"
@@ -394,29 +398,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
           <Text style={styles.modalInputLabel}>Họ và Tên Học Sinh</Text>
           <TextInput
             style={styles.modalInput}
-            placeholder="VD: Nguyễn Văn An"
+            placeholder="VD: Bé An, Bảo Nam, Thảo Linh..."
             placeholderTextColor={COLORS.gray400}
             value={newStudentFullName}
             onChangeText={setNewStudentFullName}
-          />
-
-          <Text style={styles.modalInputLabel}>Tên Đăng Nhập (Username - Không dấu, viết liền)</Text>
-          <TextInput
-            style={styles.textInputLower}
-            placeholder="VD: hocsinhan"
-            placeholderTextColor={COLORS.gray400}
-            value={newStudentUsername}
-            onChangeText={setNewStudentUsername}
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.modalInputLabel}>Mật Khẩu (Password)</Text>
-          <TextInput
-            style={styles.modalInput}
-            placeholder="VD: 123456"
-            placeholderTextColor={COLORS.gray400}
-            value={newStudentPassword}
-            onChangeText={setNewStudentPassword}
+            autoCapitalize="words"
+            onSubmitEditing={handleAddStudentSubmit}
           />
         </View>
       </Modal>
@@ -779,5 +766,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: COLORS.textDark,
+  },
+  toastBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  toastText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.success,
   },
 });

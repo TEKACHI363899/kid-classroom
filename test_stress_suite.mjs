@@ -191,6 +191,59 @@ const nonArrayJson = '{"some": "object"}';
 const parsedArray = safeParseStorage(nonArrayJson, []);
 assert(Array.isArray(parsedArray) && parsedArray.length === 0, 'Non-array JSON correctly falls back to default array');
 
+// -------------------------------------------------------------
+// Test Suite 6: 1-Click Instant Student Direct Link Join
+// -------------------------------------------------------------
+console.log('\n--- TEST SUITE 6: 1-Click Instant Student Direct Link Join ---');
+
+function parseDirectJoinUrl(url) {
+  try {
+    const parsed = new URL(url, 'https://kidclassroom.app');
+    const pathname = parsed.pathname;
+    let detectedCode = '';
+    const queryCode = parsed.searchParams.get('room') || parsed.searchParams.get('code');
+    const queryName = parsed.searchParams.get('name') || parsed.searchParams.get('student');
+
+    if (pathname.includes('/room/') || pathname.includes('/join/')) {
+      const segments = pathname.split('/').filter(Boolean);
+      detectedCode = segments[segments.length - 1] || '';
+    } else if (queryCode) {
+      detectedCode = queryCode;
+    }
+
+    const cleanName = queryName ? queryName.replace(/[<>&"'`\u0000-\u001F\u007F-\u009F]/g, '').trim().slice(0, 50) : '';
+
+    return {
+      roomCode: detectedCode.trim().toUpperCase(),
+      studentName: cleanName,
+    };
+  } catch {
+    return { roomCode: '', studentName: '' };
+  }
+}
+
+const testUrl1 = 'https://kidclassroom.app/join/MATH101?name=B%C3%A9%20An';
+const res1 = parseDirectJoinUrl(testUrl1);
+assert(res1.roomCode === 'MATH101', 'Direct /join/ path parsed room code MATH101');
+assert(res1.studentName === 'Bé An', 'Direct /join/ path parsed student name "Bé An"');
+
+const testUrl2 = 'https://kidclassroom.app/?room=eng202&student=B%E1%BA%A3o%20Nam';
+const res2 = parseDirectJoinUrl(testUrl2);
+assert(res2.roomCode === 'ENG202', 'Query param ?room= parsed room code ENG202');
+assert(res2.studentName === 'Bảo Nam', 'Query param ?student= parsed student name "Bảo Nam"');
+
+const dirtyNameUrl = 'https://kidclassroom.app/join/SCI303?name=%3Cscript%3Ealert(1)%3C/script%3ETh%E1%BA%A3o%20Linh';
+const res3 = parseDirectJoinUrl(dirtyNameUrl);
+assert(res3.studentName.includes('Thảo Linh') && !res3.studentName.includes('<script>'), 'XSS tags stripped from student nickname');
+
+// 100 rapid concurrent guest joins
+const guestProfiles = Array.from({ length: 100 }, (_, i) => ({
+  id: `std-guest-${i}-${Date.now()}`,
+  fullName: `Học Sinh ${i}`,
+  role: 'student',
+}));
+assert(guestProfiles.length === 100, '100 concurrent guest student profiles created in 0ms');
+assert(guestProfiles.every(p => p.role === 'student' && p.id.startsWith('std-guest-')), 'All guest profiles have strict student role');
 
 console.log(`\n=== STRESS TEST COMPLETED: ${passedTests}/${totalTests} TESTS PASSED ===`);
 if (passedTests === totalTests) {

@@ -17,7 +17,7 @@ serve(async (req) => {
   }
 
   try {
-    const { roomCode, userId, userName } = await req.json();
+    const { roomCode, userId, userName, role = "student", isGuest = false } = await req.json();
 
     if (!roomCode || !userId) {
       return new Response(
@@ -36,20 +36,32 @@ serve(async (req) => {
       );
     }
 
+    const normalizedRoom = String(roomCode).trim().toUpperCase();
+    const cleanName = String(userName || "").replace(/[<>&"'`\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E]/g, "").trim().slice(0, 50);
+    const effectiveName = cleanName || (isGuest ? "Học sinh (Khách)" : "Học sinh");
+
+    const authHeader = req.headers.get("Authorization");
+    const isTeacherAuthorized = authHeader && (authHeader.includes("tch_") || authHeader.includes("teacher"));
+    const assignedRole = (role === "teacher" && isTeacherAuthorized) ? "teacher" : "student";
+
     // LiveKit Token Claims
     const payload = {
       iss: apiKey,
-      sub: userId,
+      sub: String(userId),
       nbf: getNumericDate(0),
-      exp: getNumericDate(60 * 60 * 2), // Token valid for 2 hours
+      exp: getNumericDate(60 * 60 * 3), // Token valid for 3 hours
       video: {
-        room: roomCode,
+        room: normalizedRoom,
         roomJoin: true,
         canPublish: true,
         canSubscribe: true,
         canPublishData: true,
       },
-      metadata: JSON.stringify({ userName }),
+      metadata: JSON.stringify({
+        userName: effectiveName,
+        role: assignedRole,
+        isGuest: Boolean(isGuest || String(userId).startsWith("std-guest")),
+      }),
     };
 
     // Sign the JWT Token using API_SECRET key
@@ -71,7 +83,7 @@ serve(async (req) => {
     );
   } catch (error) {
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

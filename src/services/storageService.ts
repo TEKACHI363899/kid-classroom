@@ -91,8 +91,8 @@ export const syncStudentsWithSupabase = async (): Promise<StudentAccount[]> => {
                 id: s.id,
                 teacher_id: s.teacherId,
                 full_name: s.fullName,
-                username: s.username.trim().toLowerCase(),
-                password_hash: s.passwordText,
+                username: (s.username || '').trim().toLowerCase(),
+                password_hash: s.passwordText || 'guest_session',
               }, { onConflict: 'username' }),
               8000
             )
@@ -145,7 +145,7 @@ if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
         if (newStudent && newStudent.username) {
           const currentList = getTeacherStudents();
           const index = currentList.findIndex(
-            (s) => s.username && s.username.trim().toLowerCase() === newStudent.username.trim().toLowerCase()
+            (s) => Boolean(s.username && newStudent.username && s.username.trim().toLowerCase() === newStudent.username.trim().toLowerCase())
           );
           let updated: StudentAccount[];
           if (index >= 0) {
@@ -487,6 +487,104 @@ export const registerStudentAccount = async (
   };
 };
 
+/**
+ * Generates a shareable direct link for instant 1-click student joining.
+ */
+export const getClassroomShareLink = (roomCode: string): string => {
+  const cleanCode = (roomCode || '').trim().toUpperCase();
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : '';
+  return `${origin}/join/${cleanCode}`;
+};
+
+/**
+ * Instant 1-Click Direct Link Student Join
+ * Validates room code, creates lightweight guest student profile,
+ * persists session in localStorage, and performs background registration.
+ */
+export const instantStudentJoin = async (
+  roomCode: string,
+  studentName: string
+): Promise<UserProfile> => {
+  const cleanRoomCode = (roomCode || '').trim().toUpperCase();
+  const cleanName = (studentName || '').trim();
+
+  if (!cleanRoomCode) {
+    throw new Error('Mã phòng học không hợp lệ.');
+  }
+  if (!cleanName) {
+    throw new Error('Vui lòng nhập họ và tên của học sinh.');
+  }
+
+  // 1. Validate classroom existence (local first, then online with timeout)
+  let classroom = getClassroomByCode(cleanRoomCode);
+  if (!classroom && isSupabaseConfigured()) {
+    classroom = await getClassroomByCodeOnline(cleanRoomCode);
+  }
+
+  if (!classroom) {
+    throw new Error(`Không tìm thấy lớp học với mã "${cleanRoomCode}". Vui lòng kiểm tra lại đường link.`);
+  }
+
+  if (classroom.status === 'ended') {
+    throw new Error('Lớp học này đã kết thúc.');
+  }
+
+  // 2. Generate unique guest student ID
+  const generateStudentId = (): string => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `std-guest-${crypto.randomUUID()}`;
+    }
+    const ts = Date.now().toString(36);
+    const rand = Math.random().toString(36).substring(2, 9);
+    return `std-guest-${ts}-${rand}`;
+  };
+
+  const existingSession = getStoredAuthSession();
+  let studentId = generateStudentId();
+  if (
+    existingSession &&
+    existingSession.userRole === 'student' &&
+    existingSession.profile?.fullName?.toLowerCase() === cleanName.toLowerCase()
+  ) {
+    studentId = existingSession.profile.id;
+  }
+
+  const userProfile: UserProfile = {
+    id: studentId,
+    fullName: cleanName,
+    role: 'student',
+    username: `guest_${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${studentId.slice(-6)}`,
+    createdAt: new Date().toISOString(),
+  };
+
+  // 3. Persist student session to localStorage
+  saveAuthSession(userProfile);
+
+  // 4. Background registration to Supabase without blocking user flow
+  if (isSupabaseConfigured()) {
+    withTimeout(
+      supabase.from('students').upsert({
+        id: userProfile.id,
+        teacher_id: classroom.teacherId || 'tch-guest',
+        full_name: userProfile.fullName,
+        username: userProfile.username,
+        password_hash: 'guest_instant_session',
+      }, { onConflict: 'id' }),
+      4000
+    ).catch((err) => {
+      console.warn('Background guest student upsert warning:', err);
+    });
+  }
+
+  return userProfile;
+};
+
+/**
+ * @deprecated Mandatory password-based student login is deprecated.
+ * Use instantStudentJoin or lightweight session management instead.
+ */
 export const loginStudent = async (usernameInput: string, passwordInput: string): Promise<AuthResponse> => {
   const cleanUsername = usernameInput.trim().toLowerCase();
   const cleanPassword = passwordInput.trim();

@@ -1,10 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { User, ShieldCheck, LogIn, BookOpen, KeyRound, UserPlus, AlertCircle, CheckCircle, CheckSquare, Square, Sparkles } from 'lucide-react';
+import {
+  User,
+  ShieldCheck,
+  BookOpen,
+  KeyRound,
+  UserPlus,
+  AlertCircle,
+  CheckCircle,
+  CheckSquare,
+  Square,
+  Sparkles,
+  Video,
+  Hash,
+} from 'lucide-react';
 import { COLORS, ICON_SIZES } from '../constants';
 import type { UserRole, UserProfile } from '../types';
 import { Button } from '../components/common/Button';
-import { registerTeacher, loginTeacher, loginStudent } from '../services/storageService';
+import { registerTeacher, loginTeacher, saveAuthSession } from '../services/storageService';
 
 export interface HomeScreenProps {
   onLogin: (user: UserProfile, roomCode?: string) => void;
@@ -15,10 +28,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   const [roomCode, setRoomCode] = useState<string>('');
   const [roomTitle, setRoomTitle] = useState<string>('');
 
-  // Student Credentials State
-  const [studentUsername, setStudentUsername] = useState<string>('');
-  const [studentPassword, setStudentPassword] = useState<string>('');
-  const [rememberStudent, setRememberStudent] = useState<boolean>(true);
+  // 1-Click Instant Student Join State
+  const [studentNickname, setStudentNickname] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('last_student_nickname') || '';
+    }
+    return '';
+  });
+  const [rememberNickname, setRememberNickname] = useState<boolean>(true);
 
   // Teacher Auth Mode State: 'login' | 'register'
   const [teacherAuthMode, setTeacherAuthMode] = useState<'login' | 'register'>('login');
@@ -42,10 +59,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const urlRoom = params.get('room') || params.get('code') || sessionStorage.getItem('redirect_room_code');
+      const urlRoom =
+        params.get('room') ||
+        params.get('code') ||
+        sessionStorage.getItem('redirect_room_code');
       const urlTitle = sessionStorage.getItem('redirect_room_title');
       if (urlRoom) {
-        setRoomCode(urlRoom);
+        setRoomCode(urlRoom.trim().toUpperCase());
       }
       if (urlTitle) {
         setRoomTitle(urlTitle);
@@ -53,25 +73,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
     }
   }, []);
 
-  const handleStudentLoginSubmit = async () => {
+  const handleStudentInstantJoin = () => {
     if (loading) return;
     setAuthError(null);
     setAuthSuccess(null);
-    setLoading(true);
 
-    try {
-      const res = await loginStudent(studentUsername, studentPassword);
-      if (res.success && res.user) {
-        setAuthSuccess(res.message);
-        setTimeout(() => onLogin(res.user!, roomCode), 400);
-        return;
-      }
-      setAuthError(res.message);
-    } catch {
-      setAuthError('Đăng nhập thất bại. Vui lòng thử lại.');
-    } finally {
-      setLoading(false);
+    const cleanRoomCode = roomCode.trim().toUpperCase();
+    if (!cleanRoomCode) {
+      setAuthError('Vui lòng nhập Mã Phòng Học để vào lớp.');
+      return;
     }
+
+    const finalName = studentNickname.trim() || 'Học Sinh';
+
+    if (rememberNickname && typeof window !== 'undefined') {
+      localStorage.setItem('last_student_nickname', finalName);
+    }
+
+    const studentUser: UserProfile = {
+      id: `std-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      fullName: finalName,
+      role: 'student',
+    };
+
+    saveAuthSession(studentUser);
+    setAuthSuccess('Đang vào phòng học...');
+    setTimeout(() => {
+      onLogin(studentUser, cleanRoomCode);
+    }, 300);
   };
 
   const handleTeacherLogin = async () => {
@@ -167,7 +196,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
           >
             <User size={ICON_SIZES.md} color={selectedRole === 'student' ? COLORS.white : COLORS.primary} />
             <Text style={[styles.roleTabText, selectedRole === 'student' && styles.roleTabTextActive]}>
-              Đăng Nhập Học Sinh
+              Học Sinh Tham Gia
             </Text>
           </TouchableOpacity>
 
@@ -204,46 +233,51 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
         {/* Form Body */}
         {selectedRole === 'student' ? (
           <View style={styles.formContent}>
-            <Text style={styles.inputLabel}>Tên Đăng Nhập (Username)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Nhập username (VD: hocsinhan)..."
-              placeholderTextColor={COLORS.gray400}
-              value={studentUsername}
-              onChangeText={setStudentUsername}
-              autoCapitalize="none"
-              autoFocus
-            />
+            <Text style={styles.inputLabel}>Mã Phòng Học</Text>
+            <View style={styles.inputWithIconWrapper}>
+              <TextInput
+                style={styles.textInputRoom}
+                placeholder="Nhập mã phòng (VD: MATH101)..."
+                placeholderTextColor={COLORS.gray400}
+                value={roomCode}
+                onChangeText={(text) => setRoomCode(text.toUpperCase())}
+                autoCapitalize="characters"
+              />
+              <View style={styles.inputIconRight}>
+                <Hash size={20} color={COLORS.primary} />
+              </View>
+            </View>
 
-            <Text style={styles.inputLabel}>Mật Khẩu (Password)</Text>
+            <Text style={styles.inputLabel}>Tên / Biệt Danh Của Em</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Nhập mật khẩu..."
+              placeholder="VD: Bé An, Bảo Nam, Thảo Linh..."
               placeholderTextColor={COLORS.gray400}
-              secureTextEntry
-              value={studentPassword}
-              onChangeText={setStudentPassword}
-              onSubmitEditing={handleStudentLoginSubmit}
+              value={studentNickname}
+              onChangeText={setStudentNickname}
+              autoCapitalize="words"
+              onSubmitEditing={handleStudentInstantJoin}
             />
 
             <TouchableOpacity
-              onPress={() => setRememberStudent(!rememberStudent)}
+              onPress={() => setRememberNickname(!rememberNickname)}
               style={styles.checkboxRow}
             >
-              {rememberStudent ? (
+              {rememberNickname ? (
                 <CheckSquare size={20} color={COLORS.primary} />
               ) : (
                 <Square size={20} color={COLORS.gray400} />
               )}
-              <Text style={styles.checkboxText}>Ghi nhớ đăng nhập tự động trên thiết bị này</Text>
+              <Text style={styles.checkboxText}>Ghi nhớ tên của em cho các buổi học sau</Text>
             </TouchableOpacity>
 
             <Button
-              label={loading ? 'Đang Kiểm Tra...' : 'Đăng Nhập Về Dashboard'}
-              icon={LogIn}
+              label={loading ? 'Đang Kết Nối...' : 'Vào Lớp Ngay'}
+              icon={Video}
               variant="success"
+              size="lg"
               disabled={loading}
-              onPress={handleStudentLoginSubmit}
+              onPress={handleStudentInstantJoin}
               style={styles.submitBtn}
             />
           </View>
@@ -498,6 +532,27 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.textDark,
     marginTop: 6,
+  },
+  inputWithIconWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  textInputRoom: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingRight: 46,
+    paddingVertical: 14,
+    fontSize: 18,
+    fontWeight: '900',
+    color: COLORS.primary,
+    borderWidth: 2,
+    borderColor: '#BFDBFE',
+    letterSpacing: 1.5,
+  },
+  inputIconRight: {
+    position: 'absolute',
+    right: 14,
   },
   textInput: {
     backgroundColor: COLORS.gray100,

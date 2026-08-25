@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { Lock, AlertCircle } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import type { UserProfile } from './types';
 import { HomeScreen } from './screens/HomeScreen';
 import { TeacherDashboard } from './screens/TeacherDashboard';
@@ -214,6 +215,7 @@ export const App: React.FC = () => {
           roomTitle={activeRoomTitle}
           onLeaveRoom={handleLeaveRoom}
         />
+        <SpeedInsights />
       </ErrorBoundary>
     );
   }
@@ -227,6 +229,7 @@ export const App: React.FC = () => {
           <Header userName={currentUser.fullName} role={currentUser.role} onLogout={handleLogout} />
           <TeacherDashboard user={currentUser} onStartRoom={handleStartRoom} />
         </View>
+        <SpeedInsights />
       </ErrorBoundary>
     );
   }
@@ -250,6 +253,7 @@ export const App: React.FC = () => {
             onConfirm={() => setEndedRoomNoticeVisible(false)}
           />
         </View>
+        <SpeedInsights />
       </ErrorBoundary>
     );
   }
@@ -269,6 +273,7 @@ export const App: React.FC = () => {
         confirmVariant="primary"
         onConfirm={() => setEndedRoomNoticeVisible(false)}
       />
+      <SpeedInsights />
     </ErrorBoundary>
   );
 };

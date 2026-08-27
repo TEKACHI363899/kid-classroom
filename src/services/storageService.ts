@@ -662,7 +662,7 @@ export const loginStudent = async (usernameInput: string, passwordInput: string)
   };
 };
 
-export const deleteTeacherStudent = async (studentId: string, _teacherId?: string): Promise<StudentAccount[]> => {
+export const deleteTeacherStudent = async (studentId: string, teacherId?: string): Promise<StudentAccount[]> => {
   const allStudents = getTeacherStudents();
   const updated = allStudents.filter((s) => s.id !== studentId);
   if (isWindowAvailable()) {
@@ -675,13 +675,17 @@ export const deleteTeacherStudent = async (studentId: string, _teacherId?: strin
 
   if (isSupabaseConfigured()) {
     try {
-      await withTimeout(supabase.from('students').delete().eq('id', studentId), 6000);
+      let query = supabase.from('students').delete().eq('id', studentId);
+      if (teacherId) {
+        query = query.eq('teacher_id', teacherId);
+      }
+      await withTimeout(query, 6000);
     } catch (err) {
       console.warn('Supabase delete student error:', err);
     }
   }
 
-  return updated; // removed teacherId constraint
+  return updated;
 };
 
 // Classroom Management Functions
@@ -777,6 +781,9 @@ export const fetchClassroomsFromSupabase = async (_teacherId?: string): Promise<
 export const formatScheduledTime = (isoString: string): string => {
   try {
     const date = new Date(isoString);
+    if (isNaN(date.getTime())) {
+      return 'Chưa rõ lịch';
+    }
     const weekdays = [
       'Chủ Nhật',
       'Thứ Hai',
@@ -848,7 +855,7 @@ export const saveTeacherClassroom = async (classroom: Classroom): Promise<Classr
   return updated;
 };
 
-export const updateClassroomStatus = async (classroomId: string, status: ClassroomStatus): Promise<Classroom[]> => {
+export const updateClassroomStatus = async (classroomId: string, status: ClassroomStatus, teacherId?: string): Promise<Classroom[]> => {
   const allRooms = getTeacherClassrooms();
   const updated = allRooms.map((r) =>
     r.id === classroomId ? { ...r, status, isActive: status === 'live' } : r
@@ -863,13 +870,14 @@ export const updateClassroomStatus = async (classroomId: string, status: Classro
 
   if (isSupabaseConfigured()) {
     try {
-      await withTimeout(
-        supabase.from('classrooms').update({
-          status: status,
-          is_active: status !== 'ended',
-        }).eq('id', classroomId),
-        6000
-      );
+      let query = supabase.from('classrooms').update({
+        status: status,
+        is_active: status !== 'ended',
+      }).eq('id', classroomId);
+      if (teacherId) {
+        query = query.eq('teacher_id', teacherId);
+      }
+      await withTimeout(query, 6000);
     } catch (err) {
       console.warn('Failed to update classroom status in Supabase:', err);
     }
@@ -945,10 +953,11 @@ export const deleteTeacherClassroom = async (classroomId: string, teacherId?: st
 
   if (isSupabaseConfigured()) {
     try {
-      await withTimeout(
-        supabase.from('classrooms').delete().eq('id', classroomId),
-        6000
-      );
+      let query = supabase.from('classrooms').delete().eq('id', classroomId);
+      if (teacherId) {
+        query = query.eq('teacher_id', teacherId);
+      }
+      await withTimeout(query, 6000);
     } catch (err) {
       console.warn('Failed to delete classroom in Supabase:', err);
     }

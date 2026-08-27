@@ -13,6 +13,7 @@ export interface HeaderProps {
   onLogout: () => void;
   participants?: StreamParticipant[];
   elapsedSeconds?: number;
+  userId?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   participants,
   elapsedSeconds = 0,
+  userId,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { isMobile } = useResponsiveLayout();
@@ -125,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </View>
                 <Text style={styles.sidebarItemText} numberOfLines={1}>
-                  {p.userName} {p.userName === userName ? '(Bạn)' : ''}
+                  {p.userName} {p.id === userId || (p.userId ? p.userId === userId : false) ? '(Bạn)' : ''}
                 </Text>
                 {p.role === 'student' && (
                   <View style={{ marginRight: 4 }}>

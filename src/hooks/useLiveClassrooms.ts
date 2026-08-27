@@ -70,14 +70,18 @@ export const useLiveClassrooms = (teacherId?: string) => {
       }
     }
 
-    // 3. Setup polling interval as a bulletproof fallback to guarantee continuous updates
-    const pollInterval = setInterval(() => {
-      loadClassrooms();
-    }, 3000); // Poll every 3 seconds
+    // 3. Setup polling interval only as fallback when Supabase Realtime is not configured
+    const pollInterval = !isSupabaseConfigured()
+      ? setInterval(() => {
+          loadClassrooms();
+        }, 5000)
+      : null;
 
     return () => {
       active = false;
-      clearInterval(pollInterval);
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
       if (channel) {
         supabase.removeChannel(channel);
       }

@@ -35,7 +35,7 @@ export interface UseCanvasSyncReturn {
 export function useCanvasSync({
   roomId,
   userId,
-  userName,
+  userName: _userName,
   isTeacher,
 }: UseCanvasSyncProps): UseCanvasSyncReturn {
   const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
@@ -156,7 +156,7 @@ export function useCanvasSync({
           type: 'broadcast',
           event: 'stroke',
           payload: newStroke,
-        });
+        }).catch((err) => console.warn('Broadcast stroke error:', err));
       }
 
       peerService.broadcastData({
@@ -354,7 +354,7 @@ export function useCanvasSync({
 
   const canCurrentUserDraw = isTeacher
     ? true
-    : (permissionState.globalCanDraw || (permissionState.studentPermissions[userId] === true || permissionState.studentPermissions[userName] === true));
+    : (permissionState.globalCanDraw || permissionState.studentPermissions[userId] === true);
 
   return {
     strokes,

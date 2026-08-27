@@ -268,7 +268,8 @@ export class PeerService {
             // No existing sender for this kind of track -> Need renegotiation
             try {
               pc.addTrack(track, stream);
-            } catch {
+            } catch (err) {
+              console.warn('addTrack failed, triggering recall:', err);
               needsRecall = true;
             }
           }
@@ -380,14 +381,18 @@ export class PeerService {
     this.screenCalls.forEach((call) => {
       try {
         call.close();
-      } catch {}
+      } catch (err) {
+        console.warn('Close screen call error:', err);
+      }
     });
     this.screenCalls.clear();
 
     if (this.screenPeer) {
       try {
         this.screenPeer.destroy();
-      } catch {}
+      } catch (err) {
+        console.warn('Destroy screen peer error:', err);
+      }
       this.screenPeer = null;
     }
 

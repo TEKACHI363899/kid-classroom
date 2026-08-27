@@ -114,7 +114,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
       } else {
         setAddStudentError(res.message);
       }
-    } catch {
+    } catch (err) {
+      console.error('Add student error:', err);
       setAddStudentError('Thêm học sinh thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);
@@ -122,7 +123,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   };
 
   const handleDeleteStudent = async (stdId: string) => {
-    const updated = await deleteTeacherStudent(stdId);
+    const updated = await deleteTeacherStudent(stdId, activeTeacherId);
     setStudents(updated);
   };
 
@@ -167,20 +168,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onStar
   };
 
   const handleOpenRoom = (cls: Classroom) => {
-    updateClassroomStatus(cls.id, 'live').then((updated) => {
+    updateClassroomStatus(cls.id, 'live', activeTeacherId).then((updated) => {
       setClassrooms(updated);
       onStartRoom(cls.roomCode, cls.title);
     });
   };
 
   const handleEndClassroom = (classroomId: string) => {
-    updateClassroomStatus(classroomId, 'ended').then((updated) => {
+    updateClassroomStatus(classroomId, 'ended', activeTeacherId).then((updated) => {
       setClassrooms(updated);
     });
   };
 
   const handleDeleteClassroom = (classroomId: string) => {
-    deleteTeacherClassroom(classroomId).then((updated) => {
+    deleteTeacherClassroom(classroomId, activeTeacherId).then((updated) => {
       setClassrooms(updated);
     });
   };

@@ -31,9 +31,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
   // 1-Click Instant Student Join State
   const [studentNickname, setStudentNickname] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('last_student_nickname') || '';
+      return localStorage.getItem('last_student_nickname') || 'Học sinh 1';
     }
-    return '';
+    return 'Học sinh 1';
   });
   const [rememberNickname, setRememberNickname] = useState<boolean>(true);
 
@@ -84,7 +84,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
       return;
     }
 
-    const finalName = studentNickname.trim() || 'Học Sinh';
+    const finalName = studentNickname.trim() || 'Học sinh 1';
 
     if (rememberNickname && typeof window !== 'undefined') {
       localStorage.setItem('last_student_nickname', finalName);
@@ -117,7 +117,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogin }) => {
         return;
       }
       setAuthError(res.message);
-    } catch {
+    } catch (err) {
+      console.error('Teacher login error:', err);
       setAuthError('Đăng nhập thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);

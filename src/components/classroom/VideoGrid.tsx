@@ -258,7 +258,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               <ParticipantCard
                 key={p.id}
                 participant={p}
-                isSelf={p.id === userId || p.userName === userName}
+                isSelf={p.id === userId || (p.userId ? p.userId === userId : false)}
                 isTeacherOwner={isTeacher}
                 onToggleStudentDraw={onToggleStudentDraw}
               />
@@ -348,12 +348,12 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               }}
             >
               {participants
-                .filter((p) => p.role === 'teacher' || p.id === userId || p.userName === userName)
+                .filter((p) => p.role === 'teacher' || p.id === userId || (p.userId ? p.userId === userId : false))
                 .map((p) => (
                   <div key={p.id} style={{ transform: 'scale(0.85)', transformOrigin: 'bottom left' }}>
                     <ParticipantCard
                       participant={p}
-                      isSelf={p.id === userId || p.userName === userName}
+                      isSelf={p.id === userId || (p.userId ? p.userId === userId : false)}
                       isTeacherOwner={isTeacher}
                       onToggleStudentDraw={onToggleStudentDraw}
                     />
@@ -690,7 +690,7 @@ const ParticipantCard: React.FC<{
       {/* Individual Grant Drawing Toggle (Teacher only) */}
       {isTeacherOwner && p.role === 'student' && onToggleStudentDraw && (
         <TouchableOpacity
-          onPress={() => onToggleStudentDraw(p.id, p.canDraw)}
+          onPress={() => onToggleStudentDraw(p.userId || p.id, p.canDraw)}
           style={[
             styles.drawToggleBtn,
             p.canDraw ? styles.drawToggleActive : styles.drawToggleInactive,

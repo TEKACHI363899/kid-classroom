@@ -71,33 +71,34 @@ export const App: React.FC = () => {
           }
 
           const queryName = params.get('name') || params.get('student');
-          const effectiveName = (queryName ? queryName.trim() : '') || localStorage.getItem('last_student_nickname');
 
-          if (storedSession) {
-            // Case A: Already logged in -> Auto-enter Meeting Room immediately
+          // Pre-approve room access for 1-Click direct entry without waiting room barrier
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(`approved_room_${detectedCode}`, 'true');
+          }
+
+          if (storedSession && storedSession.profile.role === 'teacher') {
+            // Case A: Logged-in Teacher -> Auto-enter Meeting Room as Teacher
             setCurrentUser(storedSession.profile);
             setActiveRoomCode(detectedCode);
             if (roomObj?.title) setActiveRoomTitle(roomObj.title);
-          } else if (effectiveName) {
-            // Case B: URL name or remembered student nickname -> 1-Click instant auto-enter
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('last_student_nickname', effectiveName);
-            }
+          } else {
+            // Case B: Student direct join (no login, no prompt, zero input) -> Auto-enter as "Học sinh 1"
+            const effectiveName =
+              (queryName ? queryName.trim() : '') ||
+              storedSession?.profile?.fullName ||
+              'Học sinh 1';
+
             const guestStudent: UserProfile = {
-              id: `std-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              id: storedSession?.profile?.id || `std-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
               fullName: effectiveName,
               role: 'student',
             };
+
             saveAuthSession(guestStudent);
             setCurrentUser(guestStudent);
             setActiveRoomCode(detectedCode);
             if (roomObj?.title) setActiveRoomTitle(roomObj.title);
-          } else {
-            // Case C: Pre-fill redirect room code for HomeScreen 1-Click form
-            sessionStorage.setItem('redirect_room_code', detectedCode);
-            if (roomObj?.title) {
-              sessionStorage.setItem('redirect_room_title', roomObj.title);
-            }
           }
         };
 

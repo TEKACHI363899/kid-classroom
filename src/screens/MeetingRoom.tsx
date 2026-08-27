@@ -33,7 +33,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const currentUser = useMemo<UserProfile>(() => {
     return user || {
       id: `std-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      fullName: 'Học Sinh Thân Yêu',
+      fullName: 'Học sinh 1',
       role: 'student',
     };
   }, [user]);
@@ -81,19 +81,19 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const queryParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isApprovedParam = queryParams?.get('approved') === 'true';
 
-  // Waiting Room Status
+  // Waiting Room Status: Auto-approved for 1-Click direct entry
   const [waitingStatus, setWaitingStatus] = useState<'waiting' | 'approved' | 'declined'>(() => {
     if (isTeacher) return 'approved';
-    
-    // Secure Device Verification: only allow bypass if URL approved=true AND device holds the localStorage authorization
+
     if (typeof window !== 'undefined') {
       const isApprovedLocal = localStorage.getItem(`approved_room_${roomCode}`) === 'true';
-      if (isApprovedParam && isApprovedLocal) {
+      const isDirectLink = window.location.pathname.includes('/join/') || window.location.pathname.includes('/room/');
+      if (isApprovedParam || isApprovedLocal || isDirectLink) {
         return 'approved';
       }
     }
-    
-    return 'waiting';
+
+    return 'approved';
   });
   const waitingStatusRef = useRef<'waiting' | 'approved' | 'declined'>(waitingStatus);
   waitingStatusRef.current = waitingStatus;
@@ -296,14 +296,14 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               type: 'broadcast',
               event: 'page_state',
               payload: { pages: pagesRef.current, activePageId: activePageIdRef.current },
-            }).catch(() => {});
+            }).catch((e) => console.warn('Page state broadcast error:', e));
 
             if (strokesRef.current.length > 0) {
               roomChannelRef.current.send({
                 type: 'broadcast',
                 event: 'sync_strokes',
                 payload: strokesRef.current,
-              }).catch(() => {});
+              }).catch((e) => console.warn('Sync strokes broadcast error:', e));
             }
           }
 
@@ -588,7 +588,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             console.warn(`Connection to ${peerId} is poor.`);
             setIsCamOn((currentCamState) => {
               if (currentCamState) {
-                alert("Ket noi mang yeu! Tu dong tat camera de toi uu bang thong va bao toan am thanh.");
+                console.warn("Ket noi mang yeu! Tu dong tat camera de toi uu bang thong va bao toan am thanh.");
                 peerService.toggleVideo(false);
 
                 // Broadcast camera update
@@ -651,13 +651,17 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
     const initConnection = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('livekit-token', {
+        const tokenPromise = supabase.functions.invoke('livekit-token', {
           body: {
             roomCode,
             userId: currentUser.id,
             userName: currentUser.fullName,
           },
         });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('LiveKit token request timeout')), 5000)
+        );
+        const { data, error } = await Promise.race([tokenPromise, timeoutPromise]);
 
         if (error || !data?.token) {
           throw new Error('No LiveKit token available');
@@ -1156,14 +1160,14 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         type: 'broadcast',
         event: 'page_state',
         payload: { pages: pagesRef.current, activePageId: activePageIdRef.current },
-      }).catch(() => {});
+      }).catch((e) => console.warn('Approve page_state broadcast error:', e));
 
       if (strokesRef.current.length > 0) {
         roomChannelRef.current.send({
           type: 'broadcast',
           event: 'sync_strokes',
           payload: strokesRef.current,
-        }).catch(() => {});
+        }).catch((e) => console.warn('Approve sync_strokes broadcast error:', e));
       }
     }
 
@@ -1222,6 +1226,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         onLogout={() => setExitModalVisible(true)}
         participants={participants}
         elapsedSeconds={elapsedSeconds}
+        userId={currentUser.id}
       />
 
       {/* Network Reconnecting Banner */}
@@ -1243,7 +1248,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
               canDraw:
                 p.role === 'teacher'
                   ? true
-                  : permissionState.globalCanDraw || permissionState.studentPermissions[p.id] === true,
+                  : permissionState.globalCanDraw ||
+                    (p.userId ? permissionState.studentPermissions[p.userId] === true : false) ||
+                    permissionState.studentPermissions[p.id] === true,
             }))}
             screenStream={screenStream}
             strokes={strokes}
